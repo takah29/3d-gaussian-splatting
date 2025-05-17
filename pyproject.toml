@@ -1,0 +1,58 @@
+[project]
+name = "3d-gaussian-splatting"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["fastplotlib>=0.4.0", "jax[cuda12]>=0.6.0", "pycolmap>=3.11.1"]
+
+
+[dependency-groups]
+dev = [
+    "isort>=6.0.0",
+    "mypy>=1.15.0",
+    "pyright>=1.1.399",
+    "ruff>=0.9.4",
+    "scipy-stubs>=1.15.2.2",
+    "types-tqdm>=4.67.0.20250404",
+]
+
+[tool.ruff]
+exclude = [".mypy_cache", ".venv"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "D203",
+    "D213",
+    "D415",
+    "COM812",
+    "T201",
+    "ERA001",
+    "PLR0913",
+    "N802",
+    "N803",
+    "N806",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+include = ["src", "."]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
