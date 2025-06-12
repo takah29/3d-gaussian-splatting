@@ -3,8 +3,9 @@ from pathlib import Path
 
 import fastplotlib as fpl
 import numpy as np
+import numpy.typing as npt
 
-from utils import read_colmap_data
+from gs.utils import load_colmap_data
 
 
 def plot_reconstruction(reconstruction):
@@ -14,7 +15,9 @@ def plot_reconstruction(reconstruction):
         data=reconstruction["points_3d"], name="points_3d", cmap="viridis_r", alpha=0.5, sizes=2
     )
 
-    def make_line_collection(rot_mat_batch, t_vec_batch):
+    def make_line_collection(
+        rot_mat_batch: npt.NDArray, t_vec_batch: npt.NDArray
+    ) -> list[npt.NDArray]:
         line_collection = []
         for rot_mat, t_vec in zip(rot_mat_batch, t_vec_batch, strict=True):
             # print(rot_vec)
@@ -60,7 +63,7 @@ def main() -> None:
     parser.add_argument("base_path", type=Path)
     args = parser.parse_args()
 
-    result = read_colmap_data(args.base_path)
+    result = load_colmap_data(args.base_path)
     plot_reconstruction(result)
 
 

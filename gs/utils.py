@@ -5,7 +5,7 @@ import numpy.typing as npt
 import pycolmap
 
 
-def read_colmap_data(base_path: Path) -> dict[str, npt.NDArray]:
+def load_colmap_data(base_path: Path) -> dict[str, npt.NDArray]:
     reconstruction = pycolmap.Reconstruction(str(base_path))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
 
