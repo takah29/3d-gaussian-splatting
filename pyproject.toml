@@ -7,21 +7,26 @@ requires-python = ">=3.12"
 dependencies = [
     "fastplotlib>=0.5.0",
     "glfw>=2.9.0",
-    "jax[cuda12]>=0.6.1",
+    "jax",
+    "jaxlib",
+    "jax-cuda12-plugin[with-cuda]",
+    "jax-cuda12-pjrt",
     "pycolmap>=3.11.1",
 ]
 
+[tool.uv.sources]
+jax = { index = "jax-nightly" }
+jaxlib = { index = "jax-nightly" }
+jax-cuda12-plugin = { index = "jax-nightly" }
+jax-cuda12-pjrt = { index = "jax-nightly" }
 
-[dependency-groups]
-dev = [
-    "isort>=6.0.0",
-    "mypy>=1.15.0",
-    "pyright>=1.1.402",
-    "ruff>=0.11.13",
-    "scipy-stubs>=1.15.2.2",
-    "types-tqdm>=4.67.0.20250404",
-]
+[[tool.uv.index]]
+name = "jax-nightly"
+url = "https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/"
+explicit = true
 
+[tool.uv]
+prerelease = "allow"
 [tool.ruff]
 exclude = [".mypy_cache", ".venv"]
 line-length = 100
