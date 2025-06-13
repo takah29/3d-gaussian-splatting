@@ -20,8 +20,17 @@ def load_colmap_data(base_path: Path) -> dict[str, npt.NDArray]:
         ],
         dtype=np.float32,
     )
+
+    intrinsic_batch = np.stack(
+        [
+            reconstruction.cameras[img.camera.camera_id].params
+            for img in reconstruction.images.values()
+        ],
+        dtype=np.float32,
+    )
     return {
-        "points_3d": points_3d,
-        "rot_mat_batch": rot_mat_batch,
-        "t_vec_batch": t_vec_batch,
+        "points_3d": points_3d,  # (x, y, z) in points_3d
+        "rot_mat_batch": rot_mat_batch,  # 3x3 rotation_matrix in rot_mat_batch
+        "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
+        "intrinsic_batch": intrinsic_batch,  # (fx, fy, cx, cy) in intrinsic_batch
     }
