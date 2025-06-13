@@ -63,8 +63,17 @@ def main() -> None:
     parser.add_argument("base_path", type=Path)
     args = parser.parse_args()
 
-    result = load_colmap_data(args.base_path)
-    plot_reconstruction(result)
+    data = load_colmap_data(args.base_path)
+
+    # 読み込んだデータの情報を整形して表示
+    print("===== Data Information =====")
+    print(f"{data['points_3d'].shape=}")
+    print(f"{data['rot_mat_batch'].shape=}")
+    print(f"{data['t_vec_batch'].shape=}")
+    print(f"{data['intrinsic_batch'].shape=}")
+    print("==============================")
+
+    plot_reconstruction(data)
 
 
 if __name__ == "__main__":
