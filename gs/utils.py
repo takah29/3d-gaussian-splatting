@@ -23,7 +23,7 @@ def load_colmap_data(base_path: Path) -> dict[str, npt.NDArray]:
 
     intrinsic_batch = np.stack(
         [
-            reconstruction.cameras[img.camera.camera_id].params
+            reconstruction.cameras[img.camera.camera_id].params  # type: ignore[misc]
             for img in reconstruction.images.values()
         ],
         dtype=np.float32,

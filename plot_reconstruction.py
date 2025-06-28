@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation
 from gs.utils import load_colmap_data
 
 
-def plot_reconstruction(reconstruction):
+def plot_reconstruction(reconstruction) -> None:
     figure = fpl.Figure(
         cameras="3d", controller_types="orbit", size=(1600, 1200), names=["reconstruction"]
     )

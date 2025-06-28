@@ -48,6 +48,7 @@ ignore = [
     "N806",
     "RUF002",
     "RUF003",
+    "INP001",
 ]
 
 [tool.ruff.lint.pycodestyle]
