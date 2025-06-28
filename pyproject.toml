@@ -7,7 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
     "fastplotlib>=0.5.0",
     "glfw>=2.9.0",
+    "grain>=0.2.10",
     "jax[cuda12]>=0.6.2",
+    "optax>=0.2.5",
     "pycolmap>=3.11.1",
     "scipy>=1.16.0",
 ]
