@@ -63,7 +63,7 @@ def main() -> None:
     parser.add_argument("base_path", type=Path)
     args = parser.parse_args()
 
-    data = load_colmap_data(args.base_path)
+    data = load_colmap_data(args.base_path, quatanion=True)
 
     # 読み込んだデータの情報を整形して表示
     print("===== Data Information =====")
