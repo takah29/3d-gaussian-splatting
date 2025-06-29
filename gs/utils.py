@@ -82,7 +82,7 @@ def create_view_dataloader(
         if pth.suffix.lower() in (".jpg", ".jpeg", ".png", "gif", "bmp", "tiff")
     ]
     camera_param_list = [
-        {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic": intrinsic}
+        {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic}
         for rot_mat, t_vec, intrinsic in zip(
             reconstruction_data["rot_mat_batch"],
             reconstruction_data["t_vec_batch"],
@@ -168,7 +168,7 @@ def build_params(
     reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
 
     # 読み込んだデータの情報を整形して表示
-    print("===== Data Information =====")
+    print("===== Colmap Data Information =====")
     for k, v in reconstruction_data.items():
         print(f"{k}: {v.shape}")
     print("============================")
