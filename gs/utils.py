@@ -112,7 +112,7 @@ def create_view_dataloader(
     return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
 
 
-def compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
+def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
     if points.shape[0] == 0:
         return np.array([])
 
@@ -120,6 +120,48 @@ def compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
 
     # 自分自信が含まれるためk=4を設定
     distances, _ = tree.query(points, k=4)
-    nearest_3points_distances = distances[:, 1:]
+    nearest_3points_distances = distances[:, 1:]  # type: ignore[index]
 
     return np.mean(nearest_3points_distances, axis=1)
+
+
+def _initialize_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
+    num_points = points_3d.shape[0]
+
+    # 近傍の3点の平均距離で設定
+    nearest_mean_distances = _compute_nearest_mean_distances(points_3d)
+    scales = np.log(nearest_mean_distances)[:, np.newaxis].repeat(3, axis=1)
+
+    # 回転なし
+    quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
+
+    # sigmoidを適用して0.1となるように設定
+    alpha = 0.1
+    val = np.log(alpha / (1 - alpha))
+    opacities = np.full((num_points, 1), val)
+
+    return {"scales": scales, "quats": quats, "opacities": opacities}
+
+
+def build_params(
+    colmap_data_path: Path, max_res: int, n_epochs: int
+) -> tuple[dict[str, npt.NDArray], grain.DataLoader]:
+    reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
+
+    # 読み込んだデータの情報を整形して表示
+    print("===== Data Information =====")
+    for k, v in reconstruction_data.items():
+        print(f"{k}: {v.shape}")
+    print("============================")
+
+    view_dataloader = create_view_dataloader(
+        colmap_data_path / "images", reconstruction_data, max_res, n_epochs
+    )
+
+    params = {
+        "means3d": reconstruction_data["points_3d"],
+        "colors": reconstruction_data["colors"],
+        **_initialize_gaussian_property(reconstruction_data["points_3d"]),
+    }
+
+    return params, view_dataloader
