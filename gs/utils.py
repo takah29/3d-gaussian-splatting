@@ -75,7 +75,7 @@ def create_view_dataloader(
     num_epochs: int,
     *,
     shuffle: bool = True,
-) -> grain.DataLoader:
+) -> tuple[grain.DataLoader, tuple[int, int]]:
     target_image_path_list = [
         pth
         for pth in image_dir_parh.glob("*")
@@ -109,7 +109,10 @@ def create_view_dataloader(
         num_epochs=num_epochs,
         seed=123,
     )
-    return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
+    return (
+        grain.DataLoader(data_source=data_source, sampler=index_sampler),  # type: ignore[arg-type]
+        _load_image_and_fit(target_image_path_list[0], max_res).shape[:2],
+    )
 
 
 def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
@@ -143,9 +146,25 @@ def _initialize_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArr
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
+def init_consts(height: int, width: int):
+    return {
+        "background": np.array([0.0, 0.0, 0.0]),
+        "img_shape": np.array([height, width]),
+        "eps_alpha": 0.05,
+        "tau_pos": 0.0005,
+        "eps_eigval": 5.0,
+        "split_gaussian_scale": 0.8,
+        "split_num": 2,
+        "max_gaussinas_num": 50000,
+        "densify_from_iter": 500,
+        "densify_until_iter": 15000,
+        "densification_interval": 100,
+    }
+
+
 def build_params(
     colmap_data_path: Path, max_res: int, n_epochs: int
-) -> tuple[dict[str, npt.NDArray], grain.DataLoader]:
+) -> tuple[dict[str, npt.NDArray], dict[str, npt.NDArray], grain.DataLoader]:
     reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
 
     # 読み込んだデータの情報を整形して表示
@@ -154,7 +173,7 @@ def build_params(
         print(f"{k}: {v.shape}")
     print("============================")
 
-    view_dataloader = create_view_dataloader(
+    view_dataloader, img_size = create_view_dataloader(
         colmap_data_path / "images", reconstruction_data, max_res, n_epochs
     )
 
@@ -163,5 +182,6 @@ def build_params(
         "colors": reconstruction_data["colors"],
         **_initialize_gaussian_property(reconstruction_data["points_3d"]),
     }
+    consts = init_consts(*img_size)
 
-    return params, view_dataloader
+    return params, consts, view_dataloader
