@@ -10,6 +10,7 @@ dependencies = [
     "grain>=0.2.10",
     "jax[cuda12]>=0.6.2",
     "optax>=0.2.5",
+    "pillow>=11.2.1",
     "pycolmap>=3.11.1",
     "scipy>=1.16.0",
 ]
