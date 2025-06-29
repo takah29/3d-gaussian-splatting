@@ -17,12 +17,12 @@ def _inv_strict(mat2x2: jax.Array) -> jax.Array:
 
 def _gaussian_weight(
     pixel_coord: jax.Array,
-    gaussian_idx,
+    gaussian_idx: jax.Array,
     mean_2d: jax.Array,
     cov_2d: jax.Array,
     opacity: jax.Array,
 ) -> jax.Array:
-    def true_fun():
+    def true_fun() -> jax.Array:
         cov_inv = _inv_strict(cov_2d + jnp.eye(2) * 0.3)
         delta = pixel_coord - mean_2d
         mahal_dist = delta @ cov_inv @ delta
@@ -32,7 +32,12 @@ def _gaussian_weight(
     return jax.lax.cond(gaussian_idx >= 0, true_fun, lambda: 0.0)
 
 
-def _render_pixel(pixel_coord, depth_decending_indices, gaussians, background):
+def _render_pixel(
+    pixel_coord: jax.Array,
+    depth_decending_indices: jax.Array,
+    gaussians: dict[str, jax.Array],
+    background: jax.Array,
+) -> jax.Array:
     pixel_color = background.copy()
     tau = jnp.ones((1,))
 
@@ -45,12 +50,14 @@ def _render_pixel(pixel_coord, depth_decending_indices, gaussians, background):
         pixel_coord, depth_decending_indices, means_2d, covs_2d, opacities
     )
 
-    @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-    def body_fun(carry, inputs):
+    @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+    def body_fun(
+        carry: tuple[jax.Array, jax.Array], inputs: tuple[jax.Array, jax.Array, jax.Array]
+    ) -> tuple[tuple[jax.Array, jax.Array], None]:
         pixel_color, tau = carry
         gaussian_idx, gaussian_weight, color = inputs
 
-        def true_fun(pixel_color, tau):
+        def true_fun(pixel_color: jax.Array, tau: jax.Array) -> tuple[jax.Array, jax.Array]:
             updated_pixel_color = pixel_color + color * gaussian_weight * tau
             updated_tau = tau * (1 - gaussian_weight)
 
@@ -77,7 +84,7 @@ def _render_pixel(pixel_coord, depth_decending_indices, gaussians, background):
 def rasterize_tile_data(
     depth_decending_indices: jax.Array,
     upperleft_coord: jax.Array,
-    gaussians: jax.Array,
+    gaussians: dict[str, jax.Array],
     background: jax.Array,
 ) -> jax.Array:
     ii, jj = jnp.mgrid[0:TILE_SIZE, 0:TILE_SIZE]
@@ -96,8 +103,11 @@ rasterize_tile_data_vmap = jax.vmap(
 
 
 def _create_tile_depth_map(
-    gaussian_depth, gaussian_idx_interval, height_split_num, width_split_num
-):
+    gaussian_depth: jax.Array,
+    gaussian_idx_interval: jax.Array,
+    height_split_num: jax.Array | int,
+    width_split_num: jax.Array | int,
+) -> jax.Array:
     inf_depth_map = jnp.full((height_split_num, width_split_num), jnp.inf)
 
     start_h, start_w = gaussian_idx_interval[0, 0], gaussian_idx_interval[0, 1]
@@ -120,8 +130,11 @@ def _create_tile_depth_map(
 
 
 def _create_tile_depth_decending_indices_batch(
-    gaussians, height_split_num, width_split_num, index_size
-):
+    gaussians: dict[str, jax.Array],
+    height_split_num: jax.Array | int,
+    width_split_num: jax.Array | int,
+    index_size: int,
+) -> jax.Array:
     # ガウシアンの所属するタイルのインデックスを計算
     gauss_max_eigvals = jnp.linalg.eigvalsh(gaussians["covs_2d"])[:, 1]
     r_batch = 3.0 * jnp.sqrt(gauss_max_eigvals)[:, None]
@@ -142,7 +155,9 @@ def _create_tile_depth_decending_indices_batch(
     return jnp.where(tile_inverse_depth_topk_batch == -jnp.inf, -1, tile_depth_topk_indices_batch)
 
 
-def build_tile_data(gaussians, img_shape):
+def build_tile_data(
+    gaussians: dict[str, jax.Array], img_shape: jax.Array
+) -> tuple[jax.Array, jax.Array]:
     height_split_num = (img_shape[0] + TILE_SIZE - 1) // TILE_SIZE
     width_split_num = (img_shape[1] + TILE_SIZE - 1) // TILE_SIZE
 
@@ -163,7 +178,7 @@ def build_tile_data(gaussians, img_shape):
     )
 
 
-def rasterize(gaussians, consts) -> jax.Array:
+def rasterize(gaussians: dict[str, jax.Array], consts: dict[str, jax.Array]) -> jax.Array:
     img_shape = consts["img_shape"]
     background = consts["background"]
 

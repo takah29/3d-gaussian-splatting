@@ -57,7 +57,7 @@ def to_2dcov(
 
 
 def project(
-    params, rot_mat: jax.Array, t_vec: jax.Array, intrinsic_vec: jax.Array
+    params: dict[str, jax.Array], rot_mat: jax.Array, t_vec: jax.Array, intrinsic_vec: jax.Array
 ) -> dict[str, jax.Array]:
     means3d = params["means3d"]
     quats = params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True))
