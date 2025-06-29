@@ -1,6 +1,12 @@
 import argparse
+import pickle
 from pathlib import Path
 
+import jax
+import numpy as np
+import optax
+
+from gs.make_update import DataLogger, make_updater
 from gs.utils import build_params
 
 
@@ -11,12 +17,37 @@ def main() -> None:
         type=Path,
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
-    parser.add_argument("-n", "--n_means", type=int, default=200000, help="number of gaussians")
+    parser.add_argument("-n", "--n_means", type=int, default=20000, help="number of gaussians")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     parser.add_argument("-r", "--max_res", type=int, default=1000, help="image fit size")
     args = parser.parse_args()
 
-    params, view_dataset = build_params(args.colmap_data_path, args.max_res, args.n_epochs)
+    params, consts, view_dataset = build_params(args.colmap_data_path, args.max_res, args.n_epochs)
+
+    optimizer = optax.chain(
+        optax.clip(0.01),
+        optax.adamw(0.01),
+    )
+    opt_state = optimizer.init(params)
+
+    logger = DataLogger(Path(__file__).parent / "progress")
+
+    update = make_updater(consts, optimizer, logger, jit=True)
+
+    for i, (view, target) in enumerate(view_dataset, start=1):
+        params, _, opt_state, loss = update(params, view, target, opt_state)
+        print(f"Iter {i}: loss={loss}")
+
+    result = {
+        "params": params,
+        "consts": consts,
+        "target_image_dir_path": args.colmap_data_path / "images",
+    }
+    result = jax.tree.map(lambda x: np.array(x), result)
+
+    output_path = Path(__file__).parent / "reconstructed.pkl"
+    with output_path.open("wb") as f:
+        pickle.dump(result, f)
 
 
 if __name__ == "__main__":
