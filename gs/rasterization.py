@@ -163,7 +163,7 @@ def build_tile_data(gaussians, img_shape):
     )
 
 
-def rasterize(gaussians: jax.Array, consts) -> jax.Array:
+def rasterize(gaussians, consts) -> jax.Array:
     img_shape = consts["img_shape"]
     background = consts["background"]
 

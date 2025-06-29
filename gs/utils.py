@@ -128,7 +128,7 @@ def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
     return np.mean(nearest_3points_distances, axis=1)
 
 
-def _initialize_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
+def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
     # 近傍の3点の平均距離で設定
@@ -146,7 +146,7 @@ def _initialize_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArr
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def init_consts(height: int, width: int):
+def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray]:
     return {
         "background": np.array([0.0, 0.0, 0.0]),
         "img_shape": np.array([height, width]),
@@ -164,7 +164,7 @@ def init_consts(height: int, width: int):
 
 def build_params(
     colmap_data_path: Path, max_res: int, n_epochs: int
-) -> tuple[dict[str, npt.NDArray], dict[str, npt.NDArray], grain.DataLoader]:
+) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], grain.DataLoader]:
     reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
 
     # 読み込んだデータの情報を整形して表示
@@ -180,8 +180,8 @@ def build_params(
     params = {
         "means3d": reconstruction_data["points_3d"],
         "colors": reconstruction_data["colors"],
-        **_initialize_gaussian_property(reconstruction_data["points_3d"]),
+        **_init_gaussian_property(reconstruction_data["points_3d"]),
     }
-    consts = init_consts(*img_size)
+    consts = _init_consts(*img_size)
 
     return params, consts, view_dataloader
