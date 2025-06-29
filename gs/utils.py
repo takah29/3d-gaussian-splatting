@@ -155,7 +155,7 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
         "eps_eigval": 5.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
-        "max_gaussinas_num": 50000,
+        "max_gaussians_num": 50000,
         "densify_from_iter": 500,
         "densify_until_iter": 15000,
         "densification_interval": 100,

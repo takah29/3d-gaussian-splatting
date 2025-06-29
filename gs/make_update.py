@@ -24,7 +24,7 @@ class DataLogger:
 
 
 def make_updater(
-    consts: dict[str, jax.Array],
+    consts: dict[str, int | float | jax.Array],
     optimizer: GradientTransformationExtraArgs,
     callback: Callable,
     *,
@@ -56,7 +56,7 @@ def make_updater(
     return jax.jit(update, donate_argnames=("params",)) if jit else update
 
 
-def make_render(consts: dict[str, jax.Array], *, jit: bool = True) -> Callable:
+def make_render(consts: dict[str, int | float | jax.Array], *, jit: bool = True) -> Callable:
     def render(params: dict[str, jax.Array], view: dict[str, jax.Array]) -> jax.Array:
         projected_gaussians = project(params, **view)
 
