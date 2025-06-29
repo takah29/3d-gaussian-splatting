@@ -163,25 +163,33 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
 
 
 def build_params(
-    colmap_data_path: Path, max_res: int, n_epochs: int
+    colmap_data_path: Path, max_points: int, max_res: int, n_epochs: int
 ) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], grain.DataLoader]:
     reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
-
-    # 読み込んだデータの情報を整形して表示
-    print("===== Colmap Data Information =====")
-    for k, v in reconstruction_data.items():
-        print(f"{k}: {v.shape}")
-    print("============================")
 
     view_dataloader, img_size = create_view_dataloader(
         colmap_data_path / "images", reconstruction_data, max_res, n_epochs
     )
+    points_3d = reconstruction_data["points_3d"]
+    colors = reconstruction_data["colors"]
+
+    total_points = len(points_3d)
+    sample_size = min(max_points, total_points)
+    sampled_indices = np.random.choice(total_points, size=sample_size, replace=False)
+
+    points_3d = points_3d[sampled_indices]
+    colors = colors[sampled_indices]
 
     params = {
-        "means3d": reconstruction_data["points_3d"],
-        "colors": reconstruction_data["colors"],
-        **_init_gaussian_property(reconstruction_data["points_3d"]),
+        "means3d": points_3d,
+        "colors": colors,
+        **_init_gaussian_property(points_3d),
     }
     consts = _init_consts(*img_size)
+
+    print("===== Data Information =====")
+    for k, v in params.items():
+        print(f"{k}: {v.shape}")
+    print("============================")
 
     return params, consts, view_dataloader

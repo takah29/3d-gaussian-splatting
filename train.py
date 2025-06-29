@@ -17,12 +17,14 @@ def main() -> None:
         type=Path,
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
-    parser.add_argument("-n", "--n_means", type=int, default=20000, help="number of gaussians")
+    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
+    parser.add_argument("--max_res", type=int, default=1000, help="image fit size")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
-    parser.add_argument("-r", "--max_res", type=int, default=1000, help="image fit size")
     args = parser.parse_args()
 
-    params, consts, view_dataset = build_params(args.colmap_data_path, args.max_res, args.n_epochs)
+    params, consts, view_dataset = build_params(
+        args.colmap_data_path, args.max_points, args.max_res, args.n_epochs
+    )
 
     optimizer = optax.chain(
         optax.clip(0.01),

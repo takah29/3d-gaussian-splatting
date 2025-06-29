@@ -24,10 +24,9 @@ def project_point(point_3d: jax.Array, projection_mat: jax.Array) -> tuple[jax.A
 
 
 def quat_to_rot(quat: jax.Array) -> jax.Array:
-    quat_ = jnp.hstack((quat[1:], quat[0]))
-    norm = jnp.linalg.norm(quat_)
-    quat_ = jnp.where(norm > 1e-8, quat_ / norm, quat_)
-    return Rotation.from_quat(quat_ / norm).as_matrix()
+    norm = jnp.linalg.norm(quat)
+    quat = jnp.where(norm > 1e-8, quat / norm, quat)
+    return Rotation.from_quat(quat / norm).as_matrix()
 
 
 def compute_cov(quat: jax.Array, scale: jax.Array) -> jax.Array:
