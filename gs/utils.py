@@ -11,7 +11,9 @@ from scipy.spatial import cKDTree
 def load_colmap_data(base_path: Path, quatanion: bool = False) -> dict[str, npt.NDArray]:
     reconstruction = pycolmap.Reconstruction(str(base_path))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
-    colors = np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32)
+    colors = np.vstack(
+        [pt.color / 255.0 for pt in reconstruction.points3D.values()], dtype=np.float32
+    )
     t_vec_batch = np.stack(
         [
             -img.cam_from_world.rotation.matrix().T @ img.cam_from_world.translation
@@ -62,7 +64,6 @@ def _load_image_and_fit(image_path: Path, max_res: int) -> npt.NDArray:
         return np.asarray(img) / 255.0
 
     scale = max_res / max_current
-    print(scale)
     resized = img.resize((img_size * scale).astype(np.uint32), Image.Resampling.LANCZOS)
 
     return np.asarray(resized) / 255.0
@@ -155,7 +156,6 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
         "eps_eigval": 5.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
-        "max_gaussians_num": 50000,
         "densify_from_iter": 500,
         "densify_until_iter": 15000,
         "densification_interval": 100,
