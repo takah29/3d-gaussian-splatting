@@ -85,5 +85,5 @@ def project(
 
 
 project_point_vmap = jax.vmap(project_point, in_axes=(0, None))
-compute_cov_vmap = jax.vmap(compute_cov, in_axes=(0, 0, None))
-to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None))
+compute_cov_vmap = jax.vmap(compute_cov, in_axes=(0, 0))
+to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None, None))
