@@ -11,8 +11,8 @@ from scipy.spatial import cKDTree
 def load_colmap_data(base_path: Path, quatanion: bool = False) -> dict[str, npt.NDArray]:
     reconstruction = pycolmap.Reconstruction(str(base_path))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
-    colors = np.vstack(
-        [pt.color / 255.0 for pt in reconstruction.points3D.values()], dtype=np.float32
+    colors = (
+        np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32) / 255.0
     )
     t_vec_batch = np.stack(
         [
@@ -129,6 +129,10 @@ def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
     return np.mean(nearest_3points_distances, axis=1)
 
 
+def inverse_sigmoid(x):
+    return np.log(x / (1 - x))
+
+
 def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
@@ -139,10 +143,7 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    # sigmoidを適用して0.1となるように設定
-    alpha = 0.1
-    val = np.log(alpha / (1 - alpha))
-    opacities = np.full((num_points, 1), val)
+    opacities = np.full((num_points, 1), inverse_sigmoid(0.9))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
@@ -182,7 +183,7 @@ def build_params(
 
     params = {
         "means3d": points_3d,
-        "colors": colors,
+        "colors": inverse_sigmoid(colors),
         **_init_gaussian_property(points_3d),
     }
     consts = _init_consts(*img_size)

@@ -88,7 +88,7 @@ def rasterize_tile_data(
     background: jax.Array,
 ) -> jax.Array:
     ii, jj = jnp.mgrid[0:TILE_SIZE, 0:TILE_SIZE]
-    pixel_coords = jnp.stack([upperleft_coord[0] + ii + 0.5, upperleft_coord[1] + jj + 0.5], axis=2)
+    pixel_coords = jnp.stack([upperleft_coord[0] + jj + 0.5, upperleft_coord[1] + ii + 0.5], axis=2)
 
     image_buffer = jax.vmap(
         jax.vmap(_render_pixel, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
@@ -110,8 +110,8 @@ def _create_tile_depth_map(
 ) -> jax.Array:
     inf_depth_map = jnp.full((height_split_num, width_split_num), jnp.inf)
 
-    start_h, start_w = gaussian_idx_interval[0, 0], gaussian_idx_interval[0, 1]
-    end_h, end_w = gaussian_idx_interval[1, 0], gaussian_idx_interval[1, 1]
+    start_w, start_h = gaussian_idx_interval[0, 0], gaussian_idx_interval[0, 1]  # order (x, y)
+    end_w, end_h = gaussian_idx_interval[1, 0], gaussian_idx_interval[1, 1]
 
     # インデックスグリッドを作成
     h_indices = jnp.arange(inf_depth_map.shape[0])[:, None]
@@ -123,6 +123,7 @@ def _create_tile_depth_map(
         & (h_indices <= end_h)
         & (w_indices >= start_w)
         & (w_indices <= end_w)
+        & (gaussian_depth > 0.2)
     )
 
     # ガウシアンのデプスで更新
@@ -169,8 +170,8 @@ def build_tile_data(
     )
 
     # タイルごとの左上の座標値を計算
-    ii, jj = jnp.mgrid[0:height_split_num, 0:width_split_num]  # iiがx軸、jjがy軸
-    tile_upperleft_coord_batch = jnp.stack([ii * TILE_SIZE, jj * TILE_SIZE], axis=2)
+    ii, jj = jnp.mgrid[0:height_split_num, 0:width_split_num]  # iiがy軸、jjがx軸
+    tile_upperleft_coord_batch = jnp.stack([jj * TILE_SIZE, ii * TILE_SIZE], axis=2)
 
     return (
         tile_depth_decending_indices_batch,
@@ -181,6 +182,12 @@ def build_tile_data(
 def rasterize(
     gaussians: dict[str, jax.Array], consts: dict[str, int | float | jax.Array]
 ) -> jax.Array:
+    """projectで射影した2Dガウシアンをラスタライズする.
+
+    Note:
+      * 画像配列の次元は[H(y軸), W(x軸), C]で実装を統一する
+      * 数値計算の座標は(x, y)で行っていることに注意
+    """
     img_shape = consts["img_shape"]
     background = consts["background"]
 
