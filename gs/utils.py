@@ -8,112 +8,105 @@ from PIL import Image
 from scipy.spatial import cKDTree
 
 
-def load_colmap_data(base_path: Path, quatanion: bool = False) -> dict[str, npt.NDArray]:
-    reconstruction = pycolmap.Reconstruction(str(base_path))
+def load_colmap_data(
+    colmap_data_path: Path, image_scale: float, quatanion: bool = False
+) -> tuple[dict[str, npt.NDArray], dict[str, npt.NDArray], npt.NDArray]:
+    reconstruction = pycolmap.Reconstruction(str(colmap_data_path / "sparse" / "0"))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
     colors = (
         np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32) / 255.0
     )
     t_vec_batch = np.stack(
-        [
-            -img.cam_from_world.rotation.matrix().T @ img.cam_from_world.translation
-            for img in reconstruction.images.values()
-        ],
+        [img.cam_from_world.translation for img in reconstruction.images.values()],
         dtype=np.float32,
     )
 
-    intrinsic_batch = np.stack(
-        [
-            reconstruction.cameras[img.camera.camera_id].params  # type: ignore[misc]
-            for img in reconstruction.images.values()
-        ],
-        dtype=np.float32,
-    )
+    intrinsic_list = []
+    image_list = []
+    for img in reconstruction.images.values():
+        image_arr = _load_image_and_fit(colmap_data_path / "images" / img.name, image_scale)
+        height, width = image_arr.shape[:2]
+        width_scale = width / img.camera.width
+        height_scale = height / img.camera.height
+        intrinsic_vec = img.camera.params * np.array(
+            [width_scale, height_scale, width_scale, height_scale]
+        )
+
+        image_list.append(image_arr)
+        intrinsic_list.append(intrinsic_vec)
+
+    image_batch = np.stack(image_list, axis=0)
+    intrinsic_batch = np.stack(intrinsic_list, axis=0)
 
     if quatanion:
         quat_batch = np.stack(
             [img.cam_from_world.rotation.quat for img in reconstruction.images.values()],
             dtype=np.float32,
         )
-        return {
-            "points_3d": points_3d,  # (x, y, z) in points_3d
+        camera_params = {
             "quat_batch": quat_batch,  # (qx, qy, qz, qw) in quat_batch
             "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
             "intrinsic_batch": intrinsic_batch,  # (fx, fy, cx, cy) in intrinsic_batch
         }
+    else:
+        rot_mat_batch = np.stack(
+            [img.cam_from_world.rotation.matrix() for img in reconstruction.images.values()],
+            dtype=np.float32,
+        )
+        camera_params = {
+            "rot_mat_batch": rot_mat_batch,  # 3x3 rotation_matrix in rot_mat_batch
+            "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
+            "intrinsic_batch": intrinsic_batch,  # (fx, fy, cx, cy) in intrinsic_batch
+        }
 
-    rot_mat_batch = np.stack(
-        [img.cam_from_world.rotation.matrix().T for img in reconstruction.images.values()],
-        dtype=np.float32,
+    return (
+        {
+            "points_3d": points_3d,  # (x, y, z) in points_3d
+            "colors": colors,  # (r, g, b) in colors
+        },
+        camera_params,
+        image_batch,
     )
-    return {
-        "points_3d": points_3d,  # (x, y, z) in points_3d
-        "colors": colors,  # (r, g, b) in colors
-        "rot_mat_batch": rot_mat_batch,  # 3x3 rotation_matrix in rot_mat_batch
-        "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
-        "intrinsic_batch": intrinsic_batch,  # (fx, fy, cx, cy) in intrinsic_batch
-    }
 
 
-def _load_image_and_fit(image_path: Path, max_res: int) -> npt.NDArray:
+def _load_image_and_fit(image_path: Path, image_scale: float) -> npt.NDArray:
     img = Image.open(image_path)
     img_size = np.array(img.size)
-    max_current = np.max(img_size)
 
-    if max_current <= max_res:
-        return np.asarray(img) / 255.0
+    resized_image = img.resize((img_size * image_scale), Image.Resampling.LANCZOS)
 
-    scale = max_res / max_current
-    resized = img.resize((img_size * scale).astype(np.uint32), Image.Resampling.LANCZOS)
-
-    return np.asarray(resized) / 255.0
+    return np.asarray(resized_image).astype(np.float32) / 255.0
 
 
 def create_view_dataloader(
-    image_dir_parh: Path,
-    reconstruction_data: dict[str, npt.NDArray],
+    image_batch,
+    camera_params: dict[str, npt.NDArray],
     max_res: int,
     num_epochs: int,
     *,
     shuffle: bool = True,
 ) -> tuple[grain.DataLoader, tuple[int, int]]:
-    target_image_path_list = [
-        pth
-        for pth in image_dir_parh.glob("*")
-        if pth.suffix.lower() in (".jpg", ".jpeg", ".png", "gif", "bmp", "tiff")
-    ]
     camera_param_list = [
         {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic}
         for rot_mat, t_vec, intrinsic in zip(
-            reconstruction_data["rot_mat_batch"],
-            reconstruction_data["t_vec_batch"],
-            reconstruction_data["intrinsic_batch"],
+            camera_params["rot_mat_batch"],
+            camera_params["t_vec_batch"],
+            camera_params["intrinsic_batch"],
             strict=True,
         )
     ]
 
-    if len(target_image_path_list) != len(camera_param_list):
-        msg = (
-            f"The number of images ({len(target_image_path_list)}) "
-            f"does not match the number of camera parameters ({len(camera_param_list)})."
-        )
-        raise ValueError(msg)
+    data_source = grain.MapDataset.source(
+        list(zip(camera_param_list, image_batch, strict=True))
+    ).shuffle(seed=42)
 
-    data_source = (
-        grain.MapDataset.source(list(zip(camera_param_list, target_image_path_list, strict=False)))
-        .shuffle(seed=42)
-        .map(lambda inputs: (inputs[0], _load_image_and_fit(inputs[1], max_res)))
-    )
     index_sampler = grain.samplers.IndexSampler(
-        num_records=len(target_image_path_list),
+        num_records=len(image_batch),
         shuffle=shuffle,
         num_epochs=num_epochs,
         seed=123,
     )
-    return (
-        grain.DataLoader(data_source=data_source, sampler=index_sampler),  # type: ignore[arg-type]
-        _load_image_and_fit(target_image_path_list[0], max_res).shape[:2],
-    )
+    return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
 
 
 def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
@@ -164,13 +157,15 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
 
 
 def build_params(
-    colmap_data_path: Path, max_points: int, max_res: int, n_epochs: int
-) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], grain.DataLoader]:
-    reconstruction_data = load_colmap_data(colmap_data_path / "sparse" / "0")
-
-    view_dataloader, img_size = create_view_dataloader(
-        colmap_data_path / "images", reconstruction_data, max_res, n_epochs
+    colmap_data_path: Path, max_points: int, image_scale: float
+) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], npt.NDArray]:
+    reconstruction_data, camera_params, image_batch = load_colmap_data(
+        colmap_data_path, image_scale
     )
+    image_dataloader = create_view_dataloader(
+        image_batch, camera_params, max_points, num_epochs=1, shuffle=True
+    )
+
     points_3d = reconstruction_data["points_3d"]
     colors = reconstruction_data["colors"]
 
@@ -186,11 +181,12 @@ def build_params(
         "colors": inverse_sigmoid(colors),
         **_init_gaussian_property(points_3d),
     }
-    consts = _init_consts(*img_size)
+    height, width = image_batch.shape[1:3]
+    consts = _init_consts(height, width)
 
     print("===== Data Information =====")
     for k, v in params.items():
         print(f"{k}: {v.shape}")
     print("============================")
 
-    return params, consts, view_dataloader
+    return params, consts, image_dataloader

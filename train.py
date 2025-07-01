@@ -18,12 +18,12 @@ def main() -> None:
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
     parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
-    parser.add_argument("--max_res", type=int, default=1000, help="image fit size")
+    parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     args = parser.parse_args()
 
-    params, consts, view_dataset = build_params(
-        args.colmap_data_path, args.max_points, args.max_res, args.n_epochs
+    params, consts, image_dataloader = build_params(
+        args.colmap_data_path, args.max_points, args.image_scale
     )
 
     optimizer = optax.chain(
@@ -36,9 +36,11 @@ def main() -> None:
 
     update = make_updater(consts, optimizer, logger, jit=True)
 
-    for i, (view, target) in enumerate(view_dataset, start=1):
-        params, _, opt_state, loss = update(params, view, target, opt_state)
-        print(f"Iter {i}: loss={loss}")
+    for epoch in range(args.n_epochs):
+        for i, (view, target) in enumerate(image_dataloader):
+            print(view, target)
+            params, _, opt_state, loss = update(params, view, target, opt_state)
+            print(f"Iter {i}: loss={loss}")
 
     result = {
         "params": params,
