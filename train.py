@@ -6,6 +6,7 @@ import jax
 import numpy as np
 import optax
 
+from gs.density_control import control_density
 from gs.make_update import DataLogger, make_updater
 from gs.utils import build_params
 
@@ -59,9 +60,30 @@ def main() -> None:
 
     update = make_updater(consts, optimizer, logger, jit=True)
 
-    for i, (view, target) in enumerate(image_dataloader):
-        params, _, opt_state, loss = update(params, view, target, opt_state)
+    pos_grads_list = []
+    for i, (view, target) in enumerate(image_dataloader, start=1):
+        params, grads, opt_state, loss = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
+
+        if i % consts["densification_interval"] == 0:
+            pos_grads_list.append(grads["means3d"])
+
+            params, pruned_num, cloned_num, splitted_num = control_density(
+                params, np.stack(pos_grads_list), consts, view
+            )
+
+            print("===== Densification ======")
+            print(
+                f"pruned_num: {pruned_num}, cloned_num: {cloned_num}, splitted_num: {splitted_num}"
+            )
+            delta_num = cloned_num + splitted_num - pruned_num
+            print(
+                f"num of gaussian: {params['means3d'].shape[0] - delta_num} -> {params['means3d'].shape[0]}"
+            )
+            print("========================")
+
+            opt_state = optimizer.init(params)
+            pos_grads_list.clear()
 
     result = {
         "params": params,
