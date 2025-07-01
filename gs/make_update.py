@@ -26,7 +26,7 @@ class DataLogger:
 def make_updater(
     consts: dict[str, int | float | jax.Array],
     optimizer: GradientTransformationExtraArgs,
-    callback: Callable,
+    callback: Callable = lambda _: None,
     *,
     jit: bool = True,
 ) -> Callable:

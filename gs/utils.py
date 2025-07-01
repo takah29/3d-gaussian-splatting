@@ -73,7 +73,7 @@ def _load_image_and_fit(image_path: Path, image_scale: float) -> npt.NDArray:
     img = Image.open(image_path)
     img_size = np.array(img.size)
 
-    resized_image = img.resize((img_size * image_scale), Image.Resampling.LANCZOS)
+    resized_image = img.resize((img_size * image_scale).astype(np.uint32), Image.Resampling.LANCZOS)
 
     return np.asarray(resized_image).astype(np.float32) / 255.0
 
@@ -130,7 +130,7 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
     # 近傍の3点の平均距離で設定
-    # nearest_mean_distances = _compute_nearest_mean_distances(points_3d)
+    # nearest_mean_distances = _compute_nearest_mean_distances(points_3d) / 10
     # scales = np.log(nearest_mean_distances)[:, np.newaxis].repeat(3, axis=1)
     scales = np.log(np.ones((num_points, 3)) * 0.01)
 
@@ -147,13 +147,13 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
         "background": np.array([0.0, 0.0, 0.0]),
         "img_shape": np.array([height, width]),
         "eps_alpha": 0.05,
-        "tau_pos": 0.0005,
+        "tau_pos": 0.0002,
         "eps_eigval": 5.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
         "densify_from_iter": 500,
         "densify_until_iter": 15000,
-        "densification_interval": 100,
+        "densification_interval": 500,
     }
 
 
