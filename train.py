@@ -10,6 +10,29 @@ from gs.make_update import DataLogger, make_updater
 from gs.utils import build_params
 
 
+def get_optimizer(optimizer_class, base_lr):
+    # パラメータを分類するための関数
+    def partition_params(params):
+        """パラメータを異なるグループに分類"""
+        partition = {key: key for key in params}
+
+        return partition
+
+    # 各グループに異なるオプティマイザーを定義
+    optimizers = {
+        "means3d": optimizer_class(learning_rate=base_lr),
+        "colors": optimizer_class(learning_rate=base_lr),
+        "scales": optimizer_class(learning_rate=0.005),
+        "quats": optimizer_class(learning_rate=0.001),
+        "opacities": optimizer_class(learning_rate=0.05),
+    }
+
+    # multi_transformオプティマイザーを作成
+    optimizer = optax.multi_transform(optimizers, partition_params)
+
+    return optimizer
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -28,7 +51,7 @@ def main() -> None:
 
     optimizer = optax.chain(
         optax.clip(0.01),
-        optax.adamw(0.001),
+        get_optimizer(optax.adam, 0.001),
     )
     opt_state = optimizer.init(params)
 
