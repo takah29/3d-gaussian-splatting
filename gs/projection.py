@@ -45,7 +45,7 @@ def to_2dcov(
             [0, f[1] / mean_cam[2], -f[1] * mean_cam[1] / (mean_cam[2] ** 2)],
         ]
     )
-    prod_mat = jacobian @ rot_mat.T
+    prod_mat = jacobian @ rot_mat
     return prod_mat @ cov_3d @ prod_mat.T
 
 
