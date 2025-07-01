@@ -23,12 +23,12 @@ def main() -> None:
     args = parser.parse_args()
 
     params, consts, image_dataloader = build_params(
-        args.colmap_data_path, args.max_points, args.image_scale
+        args.colmap_data_path, args.max_points, args.image_scale, args.n_epochs
     )
 
     optimizer = optax.chain(
         optax.clip(0.01),
-        optax.adamw(0.01),
+        optax.adamw(0.001),
     )
     opt_state = optimizer.init(params)
 
@@ -36,11 +36,9 @@ def main() -> None:
 
     update = make_updater(consts, optimizer, logger, jit=True)
 
-    for epoch in range(args.n_epochs):
-        for i, (view, target) in enumerate(image_dataloader):
-            print(view, target)
-            params, _, opt_state, loss = update(params, view, target, opt_state)
-            print(f"Iter {i}: loss={loss}")
+    for i, (view, target) in enumerate(image_dataloader):
+        params, _, opt_state, loss = update(params, view, target, opt_state)
+        print(f"Iter {i}: loss={loss}")
 
     result = {
         "params": params,

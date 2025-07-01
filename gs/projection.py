@@ -3,24 +3,18 @@ import jax.numpy as jnp
 from jax.scipy.spatial.transform import Rotation
 
 
-def make_projection_matrix(
-    rot_mat: jax.Array, t_vec: jax.Array, intrinsic_vec: jax.Array
-) -> jax.Array:
-    intrinsic_mat = jnp.array(
-        [
-            [intrinsic_vec[0], 0.0, intrinsic_vec[2]],
-            [0.0, intrinsic_vec[1], intrinsic_vec[3]],
-            [0.0, 0.0, 1.0],
-        ]
-    )
+def project_point(
+    point_3d: jax.Array, rot_mat: jax.Array, t_vec: jax.Array, intrinsic_vec: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    point_cam = rot_mat @ point_3d + t_vec
 
-    return intrinsic_mat @ jnp.hstack([rot_mat, t_vec[:, None]])
+    x = point_cam[0] / point_cam[2]
+    y = point_cam[1] / point_cam[2]
 
+    u = intrinsic_vec[0] * x + intrinsic_vec[2]  # fx * x + cx
+    v = intrinsic_vec[1] * y + intrinsic_vec[3]  # fy * y + cy
 
-def project_point(point_3d: jax.Array, projection_mat: jax.Array) -> tuple[jax.Array, jax.Array]:
-    x = projection_mat @ jnp.hstack([point_3d, jnp.ones(1)])
-    x_proj = x / x[2]
-    return x_proj[:2], x[2]
+    return jnp.array([u, v]), point_cam[2]
 
 
 def quat_to_rot(quat: jax.Array) -> jax.Array:
@@ -44,7 +38,7 @@ def to_2dcov(
     intrinsic_vec: jax.Array,
 ) -> jax.Array:
     f = intrinsic_vec[:2]
-    mean_cam = jnp.block([rot_mat, t_vec[:, None]]) @ jnp.hstack([mean_3d, jnp.ones(1)])
+    mean_cam = rot_mat @ mean_3d + t_vec
     jacobian = jnp.array(
         [
             [f[0] / mean_cam[2], 0, -f[0] * mean_cam[0] / (mean_cam[2] ** 2)],
@@ -65,8 +59,7 @@ def project(
     opacities = jax.nn.sigmoid(params["opacities"])
 
     # 3D Gaussianの中心点を2D画面に投影するときの座標値を計算
-    projection_matrix = make_projection_matrix(rot_mat, t_vec, intrinsic_vec)
-    projected_points, depths = project_point_vmap(means3d, projection_matrix)
+    projected_points, depths = project_point_vmap(means3d, rot_mat, t_vec, intrinsic_vec)
 
     # 3D Gaussianの3D共分散を計算
     covs = compute_cov_vmap(quats, scales)
@@ -83,6 +76,6 @@ def project(
     }
 
 
-project_point_vmap = jax.vmap(project_point, in_axes=(0, None))
+project_point_vmap = jax.vmap(project_point, in_axes=(0, None, None, None))
 compute_cov_vmap = jax.vmap(compute_cov, in_axes=(0, 0))
 to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None, None))

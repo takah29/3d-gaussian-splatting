@@ -82,7 +82,7 @@ def create_view_dataloader(
     image_batch,
     camera_params: dict[str, npt.NDArray],
     max_res: int,
-    num_epochs: int,
+    n_epochs: int,
     *,
     shuffle: bool = True,
 ) -> tuple[grain.DataLoader, tuple[int, int]]:
@@ -103,7 +103,7 @@ def create_view_dataloader(
     index_sampler = grain.samplers.IndexSampler(
         num_records=len(image_batch),
         shuffle=shuffle,
-        num_epochs=num_epochs,
+        num_epochs=n_epochs,
         seed=123,
     )
     return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
@@ -130,13 +130,14 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
     # 近傍の3点の平均距離で設定
-    nearest_mean_distances = _compute_nearest_mean_distances(points_3d)
-    scales = np.log(nearest_mean_distances)[:, np.newaxis].repeat(3, axis=1)
+    # nearest_mean_distances = _compute_nearest_mean_distances(points_3d)
+    # scales = np.log(nearest_mean_distances)[:, np.newaxis].repeat(3, axis=1)
+    scales = np.log(np.ones((num_points, 3)) * 0.01)
 
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    opacities = np.full((num_points, 1), inverse_sigmoid(0.9))
+    opacities = np.full((num_points, 1), inverse_sigmoid(0.1))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
@@ -157,13 +158,13 @@ def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray
 
 
 def build_params(
-    colmap_data_path: Path, max_points: int, image_scale: float
+    colmap_data_path: Path, max_points: int, image_scale: float, n_epochs: int
 ) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], npt.NDArray]:
     reconstruction_data, camera_params, image_batch = load_colmap_data(
         colmap_data_path, image_scale
     )
     image_dataloader = create_view_dataloader(
-        image_batch, camera_params, max_points, num_epochs=1, shuffle=True
+        image_batch, camera_params, max_points, n_epochs=n_epochs, shuffle=True
     )
 
     points_3d = reconstruction_data["points_3d"]
@@ -178,7 +179,7 @@ def build_params(
 
     params = {
         "means3d": points_3d,
-        "colors": inverse_sigmoid(colors),
+        "colors": inverse_sigmoid(np.clip(colors, 1e-4, 1.0 - 1e-4)),
         **_init_gaussian_property(points_3d),
     }
     height, width = image_batch.shape[1:3]
