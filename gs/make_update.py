@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
 
-from gs.loss_function import gs_loss
+from gs.loss_function import l1_loss
 from gs.projection import project
 from gs.rasterization import rasterize
 
@@ -37,7 +37,7 @@ def make_updater(
     ) -> jax.Array:
         output = render_fn(params, view)
         jax.debug.callback(callback, output)
-        loss = gs_loss(output, target)
+        loss = l1_loss(output, target)
         return loss
 
     compute_loss_and_grad = jax.value_and_grad(loss_fn)
