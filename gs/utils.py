@@ -137,7 +137,7 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    opacities = np.full((num_points, 1), inverse_sigmoid(0.1))
+    opacities = np.full((num_points, 1), inverse_sigmoid(0.5))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
