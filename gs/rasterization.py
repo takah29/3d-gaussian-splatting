@@ -8,6 +8,19 @@ MAX_TILE_INDEX_SIZE = 500  # タイルごとの最大ガウシアン登録数
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+def analytical_max_eigenvalue(mat2x2: jax.Array) -> jax.Array:
+    a = mat2x2[0, 0]
+    b = mat2x2[0, 1]
+    d = mat2x2[1, 1]
+
+    trace = a + d
+    diff = a - d
+    sqrt_term = jnp.sqrt(diff * diff + 4 * b * b)
+
+    return (trace + sqrt_term) * 0.5
+
+
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
 def _inv_strict(mat2x2: jax.Array) -> jax.Array:
     a = mat2x2[0, 0]
     b = mat2x2[0, 1]
@@ -147,7 +160,7 @@ def _create_tile_depth_decending_indices_batch(
     index_size: int,
 ) -> jax.Array:
     # ガウシアンの所属するタイルのインデックスを計算
-    gauss_max_eigvals = jnp.linalg.eigvalsh(gaussians["covs_2d"])[:, 1]
+    gauss_max_eigvals = jax.vmap(analytical_max_eigenvalue)(gaussians["covs_2d"])
     r_batch = 3.0 * jnp.sqrt(gauss_max_eigvals)[:, None]
     gaussian_intervals = jnp.stack(
         (gaussians["means_2d"] - r_batch, gaussians["means_2d"] + r_batch), axis=1
