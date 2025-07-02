@@ -9,11 +9,12 @@ MAX_TILE_INDEX_SIZE = 500  # タイルごとの最大ガウシアン登録数
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
 def _inv_strict(mat2x2: jax.Array) -> jax.Array:
-    determinant = mat2x2[0, 0] * mat2x2[1, 1] - mat2x2[0, 1] * mat2x2[1, 0]
-    inv_mat2x2 = (
-        jnp.array([[mat2x2[1, 1], -mat2x2[0, 1]], [-mat2x2[1, 0], mat2x2[0, 0]]]) / determinant
-    )
-    return inv_mat2x2
+    a = mat2x2[0, 0]
+    b = mat2x2[0, 1]
+    d = mat2x2[1, 1]
+    inv_det = 1.0 / (a * d - b * b)
+
+    return inv_det * jnp.array([[d, -b], [-b, a]])
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
