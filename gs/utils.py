@@ -109,17 +109,16 @@ def create_view_dataloader(
     return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
 
 
-def _compute_nearest_mean_distances(points: npt.NDArray) -> npt.NDArray:
+def _compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
     if points.shape[0] == 0:
         return np.array([])
 
     tree = cKDTree(points)
 
-    # 自分自信が含まれるためk=4を設定
-    distances, _ = tree.query(points, k=4)
-    nearest_3points_distances = distances[:, 1:]  # type: ignore[index]
+    distances, _ = tree.query(points, k=2)
+    nearest_point_distances = distances[:, 1:].ravel()  # type: ignore[index]
 
-    return np.mean(nearest_3points_distances, axis=1)
+    return nearest_point_distances
 
 
 def inverse_sigmoid(x):
@@ -130,14 +129,17 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
     # 近傍の3点の平均距離で設定
-    # nearest_mean_distances = _compute_nearest_mean_distances(points_3d) / 10
-    # scales = np.log(nearest_mean_distances)[:, np.newaxis].repeat(3, axis=1)
-    scales = np.log(np.ones((num_points, 3)) * 0.01)
+    nearest_distances = _compute_nearest_distances(points_3d)
+    scale_factor = 0.3
+    scales = np.log(np.clip(scale_factor * nearest_distances, 0.01, 3.0))[:, np.newaxis].repeat(
+        3, axis=1
+    )
+    # scales = np.log(np.ones((num_points, 3)) * 0.01)
 
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    opacities = np.full((num_points, 1), inverse_sigmoid(0.5))
+    opacities = np.full((num_points, 1), inverse_sigmoid(0.1))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
