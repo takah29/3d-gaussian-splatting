@@ -7,7 +7,7 @@ TILE_SIZE = 16  # タイル分割のサイズ（1次元）
 MAX_TILE_INDEX_SIZE = 500  # タイルごとの最大ガウシアン登録数
 
 
-@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
 def analytical_max_eigenvalue(mat2x2: jax.Array) -> jax.Array:
     a = mat2x2[0, 0]
     b = mat2x2[0, 1]
@@ -20,7 +20,7 @@ def analytical_max_eigenvalue(mat2x2: jax.Array) -> jax.Array:
     return (trace + sqrt_term) * 0.5
 
 
-@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
 def _inv_strict(mat2x2: jax.Array) -> jax.Array:
     a = mat2x2[0, 0]
     b = mat2x2[0, 1]
@@ -30,7 +30,7 @@ def _inv_strict(mat2x2: jax.Array) -> jax.Array:
     return inv_det * jnp.array([[d, -b], [-b, a]])
 
 
-@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
 def _gaussian_weight(
     pixel_coord: jax.Array,
     mean_2d: jax.Array,
@@ -52,7 +52,7 @@ def _gaussian_weight(
     return jnp.exp(-0.5 * mahal_dist) * opacity
 
 
-@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
 def _render_pixel(
     pixel_coord: jax.Array,
     depth_decending_indices: jax.Array,
@@ -72,14 +72,14 @@ def _render_pixel(
     )
     gaussian_weight_batch = jnp.clip(gaussian_weight_batch, a_min=0.0, a_max=1.0)
 
-    @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+    @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
     def body_fun(
         carry: tuple[jax.Array, jax.Array], inputs: tuple[jax.Array, jax.Array, jax.Array]
     ) -> tuple[tuple[jax.Array, jax.Array], None]:
         pixel_color, tau = carry
         gaussian_idx, gaussian_weight, color = inputs
 
-        @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
+        @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
         def true_fun(pixel_color: jax.Array, tau: jax.Array) -> tuple[jax.Array, jax.Array]:
             updated_pixel_color = pixel_color + color * gaussian_weight * tau
             updated_tau = tau * (1 - gaussian_weight)
