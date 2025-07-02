@@ -24,11 +24,19 @@ def _gaussian_weight(
     cov_2d: jax.Array,
     opacity: jax.Array,
 ) -> jax.Array:
-    cov_inv = _inv_strict(cov_2d + jnp.eye(2) * 0.3)
-    delta = pixel_coord - mean_2d
-    mahal_dist = delta @ cov_inv @ delta
-    gaussian_weight = jnp.exp(-0.5 * mahal_dist) * opacity
-    return gaussian_weight[0]
+    eps = 0.3
+    a = cov_2d[0, 0] + eps
+    b = cov_2d[0, 1]
+    d = cov_2d[1, 1] + eps
+
+    inv_det = 1.0 / (a * d - b * b)
+
+    dx = pixel_coord[0] - mean_2d[0]
+    dy = pixel_coord[1] - mean_2d[1]
+
+    mahal_dist = (d * dx * dx - 2 * b * dx * dy + a * dy * dy) * inv_det
+
+    return jnp.exp(-0.5 * mahal_dist) * opacity
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)  # type: ignore[reportPrivateImportUsage]
