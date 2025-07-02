@@ -6,12 +6,11 @@ import jax
 import numpy as np
 import optax
 
-from gs.density_control import control_density
 from gs.make_update import DataLogger, make_updater
 from gs.utils import build_params
 
 
-def get_optimizer(optimizer_class, base_lr):
+def get_optimizer(optimizer_class, lr_scale):
     # パラメータを分類するための関数
     def partition_params(params):
         """パラメータを異なるグループに分類"""
@@ -21,11 +20,11 @@ def get_optimizer(optimizer_class, base_lr):
 
     # 各グループに異なるオプティマイザーを定義
     optimizers = {
-        "means3d": optimizer_class(learning_rate=base_lr),
-        "colors": optimizer_class(learning_rate=base_lr),
-        "scales": optimizer_class(learning_rate=0.005),
-        "quats": optimizer_class(learning_rate=0.001),
-        "opacities": optimizer_class(learning_rate=0.05),
+        "means3d": optimizer_class(learning_rate=0.001 * lr_scale),
+        "colors": optimizer_class(learning_rate=0.001 * lr_scale),
+        "scales": optimizer_class(learning_rate=0.005 * lr_scale),
+        "quats": optimizer_class(learning_rate=0.001 * lr_scale),
+        "opacities": optimizer_class(learning_rate=0.05 * lr_scale),
     }
 
     # multi_transformオプティマイザーを作成
@@ -52,7 +51,7 @@ def main() -> None:
 
     optimizer = optax.chain(
         optax.clip(0.01),
-        get_optimizer(optax.adam, 0.001),
+        get_optimizer(optax.adam, 1.0),
     )
     opt_state = optimizer.init(params)
 
@@ -65,25 +64,25 @@ def main() -> None:
         params, grads, opt_state, loss = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
-        if i % consts["densification_interval"] == 0:
-            pos_grads_list.append(grads["means3d"])
+        # if i % consts["densification_interval"] == 0:
+        #     pos_grads_list.append(grads["means3d"])
 
-            params, pruned_num, cloned_num, splitted_num = control_density(
-                params, np.stack(pos_grads_list), consts, view
-            )
+        #     params, pruned_num, cloned_num, splitted_num = control_density(
+        #         params, np.stack(pos_grads_list), consts, view
+        #     )
 
-            print("===== Densification ======")
-            print(
-                f"pruned_num: {pruned_num}, cloned_num: {cloned_num}, splitted_num: {splitted_num}"
-            )
-            delta_num = cloned_num + splitted_num - pruned_num
-            print(
-                f"num of gaussian: {params['means3d'].shape[0] - delta_num} -> {params['means3d'].shape[0]}"
-            )
-            print("========================")
+        #     print("===== Densification ======")
+        #     print(
+        #         f"pruned_num: {pruned_num}, cloned_num: {cloned_num}, splitted_num: {splitted_num}"
+        #     )
+        #     delta_num = cloned_num + splitted_num - pruned_num
+        #     print(
+        #         f"num of gaussian: {params['means3d'].shape[0] - delta_num} -> {params['means3d'].shape[0]}"
+        #     )
+        #     print("========================")
 
-            opt_state = optimizer.init(params)
-            pos_grads_list.clear()
+        #     opt_state = optimizer.init(params)
+        #     pos_grads_list.clear()
 
     result = {
         "params": params,
