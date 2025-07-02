@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 TILE_SIZE = 16  # タイル分割のサイズ（1次元）
-MAX_TILE_INDEX_SIZE = 500  # タイルごとの最大ガウシアン登録数
+MAX_TILE_INDEX_SIZE = 700  # タイルごとの最大ガウシアン登録数
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
