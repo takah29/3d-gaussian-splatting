@@ -70,7 +70,6 @@ def _render_pixel(
     gaussian_weight_batch = jax.vmap(_gaussian_weight, in_axes=(None, 0, 0, 0))(
         pixel_coord, means_2d, covs_2d, opacities
     )
-    gaussian_weight_batch = jnp.clip(gaussian_weight_batch, a_min=0.0, a_max=1.0)
 
     @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
     def body_fun(

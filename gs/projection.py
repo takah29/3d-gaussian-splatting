@@ -56,7 +56,7 @@ def project(
     quats = params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True))
     scales = params["scales"]
     colors = jax.nn.sigmoid(params["colors"])
-    opacities = jax.nn.sigmoid(params["opacities"])
+    opacities = jnp.minimum(jax.nn.sigmoid(params["opacities"]), 0.99)
 
     # 3D Gaussianの中心点を2D画面に投影するときの座標値を計算
     projected_points, depths = project_point_vmap(means3d, rot_mat, t_vec, intrinsic_vec)
