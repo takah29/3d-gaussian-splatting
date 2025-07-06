@@ -156,7 +156,7 @@ def _init_consts(
         "split_num": 2,
         "densify_from_iter": 500,
         "densify_until_iter": 15000,
-        "densification_interval": 100,
+        "densification_interval": 500,
     }
 
 

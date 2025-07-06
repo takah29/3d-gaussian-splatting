@@ -59,7 +59,7 @@ def main() -> None:
         type=Path,
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
-    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
+    parser.add_argument("--max_points", type=int, default=250000, help="max of gaussians")
     parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     args = parser.parse_args()
@@ -69,7 +69,7 @@ def main() -> None:
     )
 
     optimizer = optax.chain(
-        optax.clip(0.01),
+        # optax.clip(0.01),
         get_optimizer(optax.adam, 1.0),
     )
     opt_state = optimizer.init(params)
@@ -90,7 +90,7 @@ def main() -> None:
         update_count_arr += view_space_grads_norm > 0.0
 
         # ガウシアンの分割と除去
-        if i > consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
+        if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
             # 配列の動的な処理を行うのでnumpy配列に変換
             params = {key: np.array(val) for key, val in params.items()}
             grads_means_3d = np.array(grads["means3d"])
@@ -105,13 +105,6 @@ def main() -> None:
 
             cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
-                import matplotlib as mpl
-
-                mpl.use("QtAgg")
-                import matplotlib.pyplot as plt
-
-                plt.hist(view_space_grads_mean_norm, bins=1000, range=(0, 1))
-                plt.show()
                 params, cloned_num, splitted_num = densify_gaussians(
                     params, grads_means_3d, view_space_grads_mean_norm, consts, view
                 )
