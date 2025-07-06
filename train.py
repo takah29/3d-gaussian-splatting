@@ -3,11 +3,13 @@ import pickle
 from pathlib import Path
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import optax
 
-from gs.density_control import control_density
+from gs.density_control import densify_gaussians, prune_gaussians
 from gs.make_update import DataLogger, make_updater
+from gs.projection import project_point_vmap
 from gs.utils import build_params
 
 
@@ -32,6 +34,22 @@ def get_optimizer(optimizer_class, lr_scale):
     optimizer = optax.multi_transform(optimizers, partition_params)
 
     return optimizer
+
+
+@jax.jit
+def compute_view_space_grads_norm(next_params, current_grads, view):
+    next_params_means_2d, _ = project_point_vmap(
+        next_params["means3d"], view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
+    )
+    current_params_means_2d, _ = project_point_vmap(
+        next_params["means3d"] - current_grads["means3d"],
+        view["rot_mat"],
+        view["t_vec"],
+        view["intrinsic_vec"],
+    )
+    view_space_grads_norm = jnp.linalg.norm(next_params_means_2d - current_params_means_2d, axis=-1)
+
+    return view_space_grads_norm
 
 
 def main() -> None:
@@ -60,21 +78,40 @@ def main() -> None:
 
     update = make_updater(consts, optimizer, logger, jit=True)
 
-    pos_grads_list = []
+    view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
+    update_count_arr = np.zeros(params["means3d"].shape[0], dtype=jnp.int32)
+    densify_and_prune_iter = np.arange(
+        consts["densify_from_iter"], 100000, consts["densification_interval"], dtype=np.int32
+    )
+
     for i, (view, target) in enumerate(image_dataloader, start=1):
         params, grads, opt_state, loss = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
-        pos_grads_list.append(np.array(grads["means3d"]))
+        view_space_grads_norm = compute_view_space_grads_norm(params, grads, view)
+        view_space_grads_norm_acc += view_space_grads_norm
+        update_count_arr += view_space_grads_norm > 0.0
 
-        if i % consts["densification_interval"] == 0:
-            params, pruned_num, cloned_num, splitted_num = control_density(
-                params, np.stack(pos_grads_list), consts, view
+        # ガウシアンの分割と除去
+        if i in densify_and_prune_iter:
+            cloned_num, splitted_num = 0, 0
+            enable_mask = view_space_grads_norm_acc > 0.0
+            view_space_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
+            view_space_grads_mean_norm[enable_mask] = (
+                view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
             )
 
-            print("===== Densification ======")
+            if i <= consts["densify_until_iter"]:
+                params, cloned_num, splitted_num = densify_gaussians(
+                    params, grads["means3d"], view_space_grads_mean_norm, consts, view
+                )
+
+            # alpha値が低いガウシアンの消去
+            params, pruned_num = prune_gaussians(params, consts)
+
+            print("===== Densification and Pruning ======")
             print(
-                f"pruned_num: {pruned_num}, cloned_num: {cloned_num}, splitted_num: {splitted_num}"
+                f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
             )
             delta_num = cloned_num + splitted_num - pruned_num
             print(
@@ -83,7 +120,8 @@ def main() -> None:
             print("========================")
 
             opt_state = optimizer.init(params)
-            pos_grads_list.clear()
+            view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
+            update_count_arr = np.zeros(params["means3d"].shape[0], dtype=jnp.int32)
 
     result = {
         "params": params,

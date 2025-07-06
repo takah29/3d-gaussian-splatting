@@ -1,38 +1,35 @@
 import jax
 import jax.numpy as jnp
 
-from gs.projection import (
-    compute_cov_vmap,
-    project_point_vmap,
-    to_2dcov_vmap,
-)
+from gs.projection import compute_cov_vmap, to_2dcov_vmap
+from gs.rasterization import analytical_max_eigenvalue
 
 
-def control_density(params, pos_grads_batch, consts, view):
-    # alpha値が低いガウシアンの消去
-    params, pos_grads_batch, pruned_num = prune_gaussians(params, pos_grads_batch, consts)
+def prune_gaussians(params, consts):
+    prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_alpha"]
+    pruned_params = jax.tree.map(lambda x: x[~prune_indices[:, 0]], params)
+    return pruned_params, prune_indices.sum()
 
-    avg_magnitude = compute_avg_magnitude(pos_grads_batch, consts, view)
-    target_indices = avg_magnitude > consts["tau_pos"]
+
+def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, view):
+    target_indices = view_space_grads_mean_norm > consts["tau_pos"]
 
     target_params = jax.tree.map(lambda x: x[target_indices], params)
-    target_pos_grads_batch = pos_grads_batch[:, target_indices]
+    target_pos_grads = pos_grads[target_indices]
 
     # view space covarianceの計算
     covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
     covs_2d = to_2dcov_vmap(
         target_params["means3d"], covs_3d, view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
     )
-    max_eigvals = jnp.linalg.eigvalsh(covs_2d)[:, -1]
+    max_eigvals = jax.vmap(analytical_max_eigenvalue)(covs_2d)
 
-    clone_params, cloned_num = clone_gaussians(
-        target_params, target_pos_grads_batch, max_eigvals, consts
-    )
+    clone_params, cloned_num = clone_gaussians(target_params, target_pos_grads, max_eigvals, consts)
     split_params, splited_num = split_gaussians(
-        target_params, target_pos_grads_batch, covs_3d, max_eigvals, consts
+        target_params, target_pos_grads, covs_3d, max_eigvals, consts
     )
 
-    new_params = jax.tree.map(
+    params = jax.tree.map(
         lambda original, cloned, splitted: jnp.vstack(
             (original[~target_indices], cloned, splitted)
         ),
@@ -41,23 +38,16 @@ def control_density(params, pos_grads_batch, consts, view):
         split_params,
     )
 
-    return new_params, pruned_num, cloned_num, splited_num
+    return params, cloned_num, splited_num
 
 
-def prune_gaussians(params, pos_grads_batch, consts):
-    prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_alpha"]
-    pruned_params = jax.tree.map(lambda x: x[~prune_indices[:, 0]], params)
-    pos_grads_batch = pos_grads_batch[:, ~prune_indices[:, 0]]
-    return pruned_params, pos_grads_batch, prune_indices.sum()
-
-
-def clone_gaussians(params, pos_grads_batch, max_eigvals, consts):
+def clone_gaussians(params, pos_grads, max_eigvals, consts):
     clone_indices = max_eigvals < consts["eps_eigval"]
     clone_params = jax.tree.map(lambda x: x[clone_indices], params)
 
     # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
     # ここではすでに勾配更新適用済みなので、クローンしたあと片方のガウシアンだけ逆勾配でもとの位置に戻す
-    clone_params["means3d"] = clone_params["means3d"] - pos_grads_batch[-1][clone_indices]
+    clone_params["means3d"] = clone_params["means3d"] - pos_grads[clone_indices]
     merged_params = jax.tree.map(
         lambda original, cloned: jnp.vstack((original[clone_indices], cloned)),
         params,
@@ -67,12 +57,12 @@ def clone_gaussians(params, pos_grads_batch, max_eigvals, consts):
     return merged_params, clone_indices.sum()
 
 
-def split_gaussians(params, pos_grads_batch, covs_3d, max_eigvals, consts):
+def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
     split_indices = max_eigvals >= consts["eps_eigval"]
     split_params = jax.tree.map(lambda x: x[split_indices], params)
 
     key = jax.random.PRNGKey(0)
-    split_means_3d_sampled = batch_sample_from_covariance(
+    split_means_3d_sampled = _batch_sample_from_covariance(
         key,
         split_params["means3d"],
         covs_3d[split_indices],
@@ -97,14 +87,7 @@ def split_gaussians(params, pos_grads_batch, covs_3d, max_eigvals, consts):
     return merged_params, split_indices.sum() * (consts["split_num"] - 1)
 
 
-def compute_avg_magnitude(pos_grads_batch, consts, view):
-    view_space_mean_grads, _ = project_point_vmap(
-        pos_grads_batch.mean(axis=0), view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
-    )
-    return jnp.linalg.norm(view_space_mean_grads - view["intrinsic_vec"][2:], axis=1)
-
-
-def batch_sample_from_covariance(key, means, covariances, num_samples_per_batch=1):
+def _batch_sample_from_covariance(key, means, covariances, num_samples_per_batch=1):
     batch_size = means.shape[0]
     keys = jax.random.split(key, batch_size)
 

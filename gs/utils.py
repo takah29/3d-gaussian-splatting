@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import grain  # type: ignore[import-untyped]
+import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
 import pycolmap
@@ -144,10 +145,11 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def _init_consts(height: int, width: int) -> dict[str, int | float | npt.NDArray]:
+def _init_consts(height: int, width: int, extent: float) -> dict[str, int | float | npt.NDArray]:
     return {
         "background": np.array([0.0, 0.0, 0.0]),
         "img_shape": np.array([height, width]),
+        "extent": extent,
         "eps_alpha": 0.05,
         "tau_pos": 0.0002,
         "eps_eigval": 5.0,
@@ -184,8 +186,10 @@ def build_params(
         "colors": inverse_sigmoid(np.clip(colors, 1e-4, 1.0 - 1e-4)),
         **_init_gaussian_property(points_3d),
     }
+
     height, width = image_batch.shape[1:3]
-    consts = _init_consts(height, width)
+    extent = jnp.linalg.norm(points_3d.max(axis=0) - points_3d.min(axis=0))
+    consts = _init_consts(height, width, extent)
 
     print("===== Data Information =====")
     for k, v in params.items():
