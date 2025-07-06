@@ -7,10 +7,11 @@ import numpy.typing as npt
 import pycolmap
 from PIL import Image
 from scipy.spatial import cKDTree
+from scipy.special import logit
 
 
 def load_colmap_data(
-    colmap_data_path: Path, image_scale: float, quatanion: bool = False
+    colmap_data_path: Path, image_scale: float, *, quatanion: bool = False
 ) -> tuple[dict[str, npt.NDArray], dict[str, npt.NDArray], npt.NDArray]:
     reconstruction = pycolmap.Reconstruction(str(colmap_data_path / "sparse" / "0"))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
@@ -121,10 +122,6 @@ def _compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
     return nearest_point_distances
 
 
-def inverse_sigmoid(x):
-    return np.log(x / (1 - x))
-
-
 def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
@@ -139,7 +136,7 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    opacities = np.full((num_points, 1), inverse_sigmoid(0.1))
+    opacities = np.full((num_points, 1), logit(0.1))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
@@ -187,7 +184,7 @@ def build_params(
 
     params = {
         "means3d": points_3d,
-        "colors": inverse_sigmoid(np.clip(colors, 1e-4, 1.0 - 1e-4)),
+        "colors": logit(np.clip(colors, 1e-4, 1.0 - 1e-4)),
         **_init_gaussian_property(points_3d),
     }
 
