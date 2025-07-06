@@ -6,7 +6,9 @@ from gs.rasterization import analytical_max_eigenvalue
 
 
 def prune_gaussians(params, consts):
-    prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_alpha"]
+    alpha_prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_alpha"]
+    scale_prune_indices = jnp.exp(params["scales"]).max(axis=1) > (consts["extent"] * 0.1)
+    prune_indices = alpha_prune_indices | scale_prune_indices
     pruned_params = jax.tree.map(lambda x: x[~prune_indices[:, 0]], params)
     return pruned_params, prune_indices.sum()
 
