@@ -80,9 +80,8 @@ def _load_image_and_fit(image_path: Path, image_scale: float) -> npt.NDArray:
 
 
 def create_view_dataloader(
-    image_batch,
+    image_batch: npt.NDArray,
     camera_params: dict[str, npt.NDArray],
-    max_res: int,
     n_epochs: int,
     *,
     shuffle: bool = True,
@@ -145,10 +144,13 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def _init_consts(height: int, width: int, extent: float) -> dict[str, int | float | npt.NDArray]:
+def _init_consts(
+    height: int, width: int, max_points: int, extent: float
+) -> dict[str, int | float | npt.NDArray]:
     return {
         "background": np.array([0.0, 0.0, 0.0]),
         "img_shape": np.array([height, width]),
+        "max_points": max_points,
         "extent": extent,
         "eps_alpha": 0.05,
         "tau_pos": 0.0002,
@@ -168,7 +170,7 @@ def build_params(
         colmap_data_path, image_scale
     )
     image_dataloader = create_view_dataloader(
-        image_batch, camera_params, max_points, n_epochs=n_epochs, shuffle=True
+        image_batch, camera_params, n_epochs=n_epochs, shuffle=True
     )
 
     points_3d = reconstruction_data["points_3d"]
@@ -176,7 +178,9 @@ def build_params(
 
     total_points = len(points_3d)
     sample_size = min(max_points, total_points)
-    sampled_indices = np.random.choice(total_points, size=sample_size, replace=False)
+    sampled_indices = np.random.default_rng(123).choice(
+        total_points, size=sample_size, replace=False
+    )
 
     points_3d = points_3d[sampled_indices]
     colors = colors[sampled_indices]
@@ -189,7 +193,7 @@ def build_params(
 
     height, width = image_batch.shape[1:3]
     extent = jnp.linalg.norm(points_3d.max(axis=0) - points_3d.min(axis=0))
-    consts = _init_consts(height, width, extent)
+    consts = _init_consts(height, width, max_points, extent)
 
     print("===== Data Information =====")
     for k, v in params.items():
