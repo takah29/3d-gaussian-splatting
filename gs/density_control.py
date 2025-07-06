@@ -1,22 +1,23 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
+from scipy.special import expit
 
 from gs.projection import compute_cov_vmap, to_2dcov_vmap
-from gs.rasterization import analytical_max_eigenvalue
 
 
 def prune_gaussians(params, consts):
-    alpha_prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_prune_alpha"]
-    scale_prune_indices = jnp.exp(params["scales"]).max(axis=1) > (consts["extent"] * 0.1)
+    alpha_prune_indices = (expit(params["opacities"]) < consts["eps_prune_alpha"]).ravel()
+    scale_prune_indices = np.exp(params["scales"].max(axis=1)) > consts["extent"] * 0.1
     prune_indices = alpha_prune_indices | scale_prune_indices
-    pruned_params = jax.tree.map(lambda x: x[~prune_indices[:, 0]], params)
+    pruned_params = {key: val[~prune_indices] for key, val in params.items()}
     return pruned_params, prune_indices.sum()
 
 
 def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, view):
     target_indices = view_space_grads_mean_norm > consts["tau_pos"]
 
-    target_params = jax.tree.map(lambda x: x[target_indices], params)
+    target_params = {key: val[target_indices] for key, val in params.items()}
     target_pos_grads = pos_grads[target_indices]
 
     # view space covarianceの計算
@@ -24,44 +25,38 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
     covs_2d = to_2dcov_vmap(
         target_params["means3d"], covs_3d, view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
     )
-    max_eigvals = jax.vmap(analytical_max_eigenvalue)(covs_2d)
+    max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
 
     clone_params, cloned_num = clone_gaussians(target_params, target_pos_grads, max_eigvals, consts)
     split_params, splited_num = split_gaussians(
         target_params, target_pos_grads, covs_3d, max_eigvals, consts
     )
 
-    params = jax.tree.map(
-        lambda original, cloned, splitted: jnp.vstack(
-            (original[~target_indices], cloned, splitted)
-        ),
-        params,
-        clone_params,
-        split_params,
-    )
+    params = {
+        key: np.vstack((params[key][~target_indices], clone_params[key], split_params[key]))
+        for key in params
+    }
 
     return params, cloned_num, splited_num
 
 
 def clone_gaussians(params, pos_grads, max_eigvals, consts):
     clone_indices = max_eigvals < consts["eps_clone_eigval"]
-    clone_params = jax.tree.map(lambda x: x[clone_indices], params)
+    clone_params = {key: val[clone_indices] for key, val in params.items()}
 
     # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
     # ここではすでに勾配更新適用済みなので、クローンしたあと片方のガウシアンだけ逆勾配でもとの位置に戻す
     clone_params["means3d"] = clone_params["means3d"] - pos_grads[clone_indices]
-    merged_params = jax.tree.map(
-        lambda original, cloned: jnp.vstack((original[clone_indices], cloned)),
-        params,
-        clone_params,
-    )
+    merged_params = {
+        key: np.vstack((params[key][clone_indices], clone_params[key])) for key in params
+    }
 
     return merged_params, clone_indices.sum()
 
 
 def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
     split_indices = max_eigvals >= consts["eps_clone_eigval"]
-    split_params = jax.tree.map(lambda x: x[split_indices], params)
+    split_params = {key: val[split_indices] for key, val in params.items()}
 
     key = jax.random.PRNGKey(0)
     split_means_3d_sampled = _batch_sample_from_covariance(
@@ -73,8 +68,8 @@ def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
     split_params_tuple = tuple(
         {
             "means3d": means_3d,
-            "scales": jnp.log(  # 実際のstdに変換して処理して戻す
-                jnp.exp(split_params["scales"])
+            "scales": np.log(  # 実際のstdに変換して処理して戻す
+                np.exp(split_params["scales"])
                 / (consts["split_gaussian_scale"] * consts["split_num"])
             ),
             "quats": split_params["quats"],
@@ -84,7 +79,10 @@ def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
         for means_3d in split_means_3d_sampled
     )
 
-    merged_params = jax.tree.map(lambda *v: jnp.vstack(v), *split_params_tuple)
+    merged_params = {}
+    for key in params:
+        values = [param_dict[key] for param_dict in split_params_tuple]
+        merged_params[key] = np.vstack(values)
 
     return merged_params, split_indices.sum() * (consts["split_num"] - 1)
 

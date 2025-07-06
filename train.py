@@ -78,8 +78,8 @@ def main() -> None:
 
     update = make_updater(consts, optimizer, logger, jit=True)
 
-    view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
-    update_count_arr = np.zeros(params["means3d"].shape[0], dtype=jnp.int32)
+    view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
+    update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
 
     for i, (view, target) in enumerate(image_dataloader, start=1):
         params, grads, opt_state, loss = update(params, view, target, opt_state)
@@ -91,21 +91,34 @@ def main() -> None:
 
         # ガウシアンの分割と除去
         if i > consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
-            cloned_num, splitted_num = 0, 0
+            # 配列の動的な処理を行うのでnumpy配列に変換
+            params = {key: np.array(val) for key, val in params.items()}
+            grads_means_3d = np.array(grads["means3d"])
+            view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
+            update_count_arr = np.array(update_count_arr)
+
             enable_mask = view_space_grads_norm_acc > 0.0
-            view_space_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
+            view_space_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
             view_space_grads_mean_norm[enable_mask] = (
                 view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
             )
 
+            cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
-                params, cloned_num, splitted_num = densify_gaussians(
-                    params, grads["means3d"], view_space_grads_mean_norm, consts, view
-                )
+                import matplotlib as mpl
 
+                mpl.use("QtAgg")
+                import matplotlib.pyplot as plt
+
+                plt.hist(view_space_grads_mean_norm, bins=1000, range=(0, 1))
+                plt.show()
+                params, cloned_num, splitted_num = densify_gaussians(
+                    params, grads_means_3d, view_space_grads_mean_norm, consts, view
+                )
+                print(type(params["means3d"]))
             # alpha値が低いガウシアンの消去
             params, pruned_num = prune_gaussians(params, consts)
-
+            print(type(params["means3d"]))
             print("===== Densification and Pruning ======")
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
@@ -117,8 +130,8 @@ def main() -> None:
             print("========================")
 
             opt_state = optimizer.init(params)
-            view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
-            update_count_arr = np.zeros(params["means3d"].shape[0], dtype=jnp.int32)
+            view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
+            update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
 
     result = {
         "params": params,
