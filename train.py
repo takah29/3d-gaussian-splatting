@@ -80,9 +80,6 @@ def main() -> None:
 
     view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=jnp.int32)
-    densify_and_prune_iter = np.arange(
-        consts["densify_from_iter"], 100000, consts["densification_interval"], dtype=np.int32
-    )
 
     for i, (view, target) in enumerate(image_dataloader, start=1):
         params, grads, opt_state, loss = update(params, view, target, opt_state)
@@ -93,7 +90,7 @@ def main() -> None:
         update_count_arr += view_space_grads_norm > 0.0
 
         # ガウシアンの分割と除去
-        if i in densify_and_prune_iter:
+        if i > consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
             cloned_num, splitted_num = 0, 0
             enable_mask = view_space_grads_norm_acc > 0.0
             view_space_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=jnp.float32)
