@@ -6,7 +6,7 @@ from gs.rasterization import analytical_max_eigenvalue
 
 
 def prune_gaussians(params, consts):
-    alpha_prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_alpha"]
+    alpha_prune_indices = jax.nn.sigmoid(params["opacities"]) < consts["eps_prune_alpha"]
     scale_prune_indices = jnp.exp(params["scales"]).max(axis=1) > (consts["extent"] * 0.1)
     prune_indices = alpha_prune_indices | scale_prune_indices
     pruned_params = jax.tree.map(lambda x: x[~prune_indices[:, 0]], params)
@@ -44,7 +44,7 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
 
 
 def clone_gaussians(params, pos_grads, max_eigvals, consts):
-    clone_indices = max_eigvals < consts["eps_eigval"]
+    clone_indices = max_eigvals < consts["eps_clone_eigval"]
     clone_params = jax.tree.map(lambda x: x[clone_indices], params)
 
     # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
@@ -60,7 +60,7 @@ def clone_gaussians(params, pos_grads, max_eigvals, consts):
 
 
 def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
-    split_indices = max_eigvals >= consts["eps_eigval"]
+    split_indices = max_eigvals >= consts["eps_clone_eigval"]
     split_params = jax.tree.map(lambda x: x[split_indices], params)
 
     key = jax.random.PRNGKey(0)

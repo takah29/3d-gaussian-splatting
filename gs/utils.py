@@ -152,14 +152,14 @@ def _init_consts(
         "img_shape": np.array([height, width]),
         "max_points": max_points,
         "extent": extent,
-        "eps_alpha": 0.05,
-        "tau_pos": 0.0002,
-        "eps_eigval": 5.0,
+        "eps_prune_alpha": 0.05,
+        "tau_pos": 0.3,
+        "eps_clone_eigval": 5.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
         "densify_from_iter": 500,
         "densify_until_iter": 15000,
-        "densification_interval": 500,
+        "densification_interval": 100,
     }
 
 
