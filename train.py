@@ -59,7 +59,7 @@ def main() -> None:
         type=Path,
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
-    parser.add_argument("--max_points", type=int, default=250000, help="max of gaussians")
+    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
     parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     args = parser.parse_args()
@@ -104,15 +104,13 @@ def main() -> None:
             )
 
             cloned_num, splitted_num = 0, 0
+            print("===== Densification and Pruning ======")
             if i <= consts["densify_until_iter"]:
                 params, cloned_num, splitted_num = densify_gaussians(
                     params, grads_means_3d, view_space_grads_mean_norm, consts, view
                 )
-                print(type(params["means3d"]))
             # alpha値が低いガウシアンの消去
             params, pruned_num = prune_gaussians(params, consts)
-            print(type(params["means3d"]))
-            print("===== Densification and Pruning ======")
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
             )

@@ -27,9 +27,38 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
     )
     max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
 
-    clone_params, cloned_num = clone_gaussians(target_params, target_pos_grads, max_eigvals, consts)
+    clone_indices = max_eigvals < consts["eps_clone_eigval"]
+    split_indices = max_eigvals >= consts["eps_clone_eigval"]
+    split_num = consts["split_num"]
+
+    # 分割後のガウシアン数が最大ガウシアン数を超えている場合、最大ガウシアン数に収まるようにランダムサンプルする
+    max_densification_num = consts["max_points"] - params["means3d"].shape[0]
+    densification_num = clone_indices.sum() + split_indices.sum() * (split_num - 1)
+    if max_densification_num < densification_num:
+        print(
+            f"The Gaussians to be split are {densification_num}, "
+            f"but the maximum allowed is {max_densification_num}, "
+            "so we'll randomly sample to fit within the maximum limit."
+        )
+        rng = np.random.default_rng(455)
+        ind_arr = np.array(range(max_eigvals.shape[0]))
+        clone_indices = np.isin(
+            ind_arr, rng.choice(np.where(clone_indices)[0], max_densification_num // 2)
+        )
+        split_indices = np.isin(
+            ind_arr, rng.choice(np.where(split_indices)[0], max_densification_num // 2)
+        )
+        exclude_indices = ~clone_indices & ~split_indices
+        exclude_numbers = np.where(target_indices)[0][exclude_indices]
+        target_indices[exclude_numbers] = False
+        # 分割対象のガウシアン数を増やすため、分割数を2に設定
+        split_num = 2
+
+    clone_params, cloned_num = clone_gaussians(
+        target_params, target_pos_grads, clone_indices, consts
+    )
     split_params, splited_num = split_gaussians(
-        target_params, target_pos_grads, covs_3d, max_eigvals, consts
+        target_params, target_pos_grads, covs_3d, split_indices, consts, split_num
     )
 
     params = {
@@ -40,8 +69,7 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
     return params, cloned_num, splited_num
 
 
-def clone_gaussians(params, pos_grads, max_eigvals, consts):
-    clone_indices = max_eigvals < consts["eps_clone_eigval"]
+def clone_gaussians(params, pos_grads, clone_indices, consts):
     clone_params = {key: val[clone_indices] for key, val in params.items()}
 
     # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
@@ -54,8 +82,7 @@ def clone_gaussians(params, pos_grads, max_eigvals, consts):
     return merged_params, clone_indices.sum()
 
 
-def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
-    split_indices = max_eigvals >= consts["eps_clone_eigval"]
+def split_gaussians(params, pos_grads, covs_3d, split_indices, consts, split_num):
     split_params = {key: val[split_indices] for key, val in params.items()}
 
     key = jax.random.PRNGKey(0)
@@ -63,14 +90,13 @@ def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
         key,
         split_params["means3d"],
         covs_3d[split_indices],
-        num_samples_per_batch=consts["split_num"],
+        num_samples_per_batch=split_num,
     )
     split_params_tuple = tuple(
         {
             "means3d": means_3d,
             "scales": np.log(  # 実際のstdに変換して処理して戻す
-                np.exp(split_params["scales"])
-                / (consts["split_gaussian_scale"] * consts["split_num"])
+                np.exp(split_params["scales"]) / (consts["split_gaussian_scale"] * split_num)
             ),
             "quats": split_params["quats"],
             "colors": split_params["colors"],
@@ -84,7 +110,7 @@ def split_gaussians(params, pos_grads, covs_3d, max_eigvals, consts):
         values = [param_dict[key] for param_dict in split_params_tuple]
         merged_params[key] = np.vstack(values)
 
-    return merged_params, split_indices.sum() * (consts["split_num"] - 1)
+    return merged_params, split_indices.sum() * (split_num - 1)
 
 
 def _batch_sample_from_covariance(key, means, covariances, num_samples_per_batch=1):
