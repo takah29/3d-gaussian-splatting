@@ -37,10 +37,9 @@ def _gaussian_weight(
     cov_2d: jax.Array,
     opacity: jax.Array,
 ) -> jax.Array:
-    eps = 0.3
-    a = cov_2d[0, 0] + eps
+    a = cov_2d[0, 0]
     b = cov_2d[0, 1]
-    d = cov_2d[1, 1] + eps
+    d = cov_2d[1, 1]
 
     inv_det = 1.0 / (a * d - b * b)
 

@@ -137,17 +137,14 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
     # 近傍の3点の平均距離で設定
-    nearest_distances = _compute_nearest_distances(points_3d)
-    scale_factor = 0.3
-    scales = np.log(np.clip(scale_factor * nearest_distances, 0.01, 3.0))[:, np.newaxis].repeat(
-        3, axis=1
-    )
+    nearest_distances = _compute_nearest_distances(points_3d) ** 2
+    scales = np.log(np.clip(nearest_distances, 0.01, 3.0))[:, np.newaxis].repeat(3, axis=1)
     # scales = np.log(np.ones((num_points, 3)) * 0.01)
 
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
-    opacities = np.full((num_points, 1), logit(0.1))
+    opacities = np.full((num_points, 1), logit(0.8))
 
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
@@ -200,7 +197,9 @@ def build_params(
     }
 
     height, width = image_batch.shape[1:3]
-    extent = jnp.linalg.norm(points_3d.max(axis=0) - points_3d.min(axis=0))
+    extent = jnp.linalg.norm(
+        camera_params["t_vec_batch"] - camera_params["t_vec_batch"].mean(axis=0), axis=1
+    ).max()
     consts = _init_consts(height, width, max_points, extent)
 
     print("===== Data Information =====")

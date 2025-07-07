@@ -7,13 +7,12 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from gs.density_control import densify_gaussians, prune_gaussians
 from gs.make_update import DataLogger, make_updater
 from gs.projection import project_point_vmap
 from gs.utils import build_params
 
 
-def get_optimizer(optimizer_class, lr_scale):
+def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     # パラメータを分類するための関数
     def partition_params(params):
         """パラメータを異なるグループに分類"""
@@ -21,9 +20,16 @@ def get_optimizer(optimizer_class, lr_scale):
 
         return partition
 
+    position_lr_scheduler = optax.exponential_decay(
+        init_value=1e-4 * extent * lr_scale,
+        transition_steps=total_iter,
+        decay_rate=0.01,  # 最終値/初期値
+        end_value=1e-6 * extent * lr_scale,
+    )
+
     # 各グループに異なるオプティマイザーを定義
     optimizers = {
-        "means3d": optimizer_class(learning_rate=0.001 * lr_scale),
+        "means3d": optimizer_class(learning_rate=position_lr_scheduler),
         "colors": optimizer_class(learning_rate=0.001 * lr_scale),
         "scales": optimizer_class(learning_rate=0.005 * lr_scale),
         "quats": optimizer_class(learning_rate=0.001 * lr_scale),
@@ -70,7 +76,7 @@ def main() -> None:
 
     optimizer = optax.chain(
         # optax.clip(0.01),
-        get_optimizer(optax.adam, 1.0),
+        get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader)),
     )
     opt_state = optimizer.init(params)
 

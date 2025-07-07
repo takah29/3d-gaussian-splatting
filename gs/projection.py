@@ -25,7 +25,7 @@ def quat_to_rot(quat: jax.Array) -> jax.Array:
 
 def compute_cov(quat: jax.Array, scale: jax.Array) -> jax.Array:
     rot_mat = quat_to_rot(quat)
-    s_mat = jnp.diag(jnp.exp(scale))
+    s_mat = jnp.diag(scale)
     prod_mat = rot_mat @ s_mat
     return prod_mat @ prod_mat.T
 
@@ -43,8 +43,8 @@ def to_2dcov(
 
     mean_cam = rot_mat @ mean_3d + t_vec
 
-    tan_fovx = jnp.arctan(width / (2.0 * fx))
-    tan_fovy = jnp.arctan(height / (2.0 * fy))
+    tan_fovx = 2.0 * jnp.arctan(width / (2.0 * fx))
+    tan_fovy = 2.0 * jnp.arctan(height / (2.0 * fy))
 
     limx = 1.3 * tan_fovx
     limy = 1.3 * tan_fovy
@@ -73,7 +73,7 @@ def project(
 ) -> dict[str, jax.Array]:
     means3d = params["means3d"]
     quats = params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True))
-    scales = params["scales"]
+    scales = jnp.exp(params["scales"])
     colors = jax.nn.sigmoid(params["colors"])
     opacities = jnp.minimum(jax.nn.sigmoid(params["opacities"]), 0.99)
 
@@ -84,7 +84,8 @@ def project(
     covs = compute_cov_vmap(quats, scales)
 
     # 3D Gaussianの3D共分散を2D画面に投影したときの2D共分散を計算
-    covs_2d = to_2dcov_vmap(means3d, covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"])
+    covs_2d_raw = to_2dcov_vmap(means3d, covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"])
+    covs_2d = covs_2d_raw + jnp.eye(2) * 0.3
 
     return {
         "means_2d": projected_points,
