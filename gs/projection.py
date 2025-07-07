@@ -36,21 +36,40 @@ def to_2dcov(
     rot_mat: jax.Array,
     t_vec: jax.Array,
     intrinsic_vec: jax.Array,
+    img_shape: jax.Array,
 ) -> jax.Array:
-    f = intrinsic_vec[:2]
+    fx, fy, _, _ = intrinsic_vec[0], intrinsic_vec[1], intrinsic_vec[2], intrinsic_vec[3]
+    height, width = img_shape[0], img_shape[1]
+
     mean_cam = rot_mat @ mean_3d + t_vec
+
+    tan_fovx = jnp.arctan(width / (2.0 * fx))
+    tan_fovy = jnp.arctan(height / (2.0 * fy))
+
+    limx = 1.3 * tan_fovx
+    limy = 1.3 * tan_fovy
+    z = mean_cam[2]
+    x_clipped = jnp.clip(mean_cam[0] / mean_cam[2], -limx, limx) * z
+    y_clipped = jnp.clip(mean_cam[1] / mean_cam[2], -limy, limy) * z
+
+    z2 = z * z
     jacobian = jnp.array(
         [
-            [f[0] / mean_cam[2], 0, -f[0] * mean_cam[0] / (mean_cam[2] ** 2)],
-            [0, f[1] / mean_cam[2], -f[1] * mean_cam[1] / (mean_cam[2] ** 2)],
+            [fx / z, 0, -fx * x_clipped / (z2)],
+            [0, fy / z, -fy * y_clipped / (z2)],
         ]
     )
+
     prod_mat = jacobian @ rot_mat
     return prod_mat @ cov_3d @ prod_mat.T
 
 
 def project(
-    params: dict[str, jax.Array], rot_mat: jax.Array, t_vec: jax.Array, intrinsic_vec: jax.Array
+    params: dict[str, jax.Array],
+    rot_mat: jax.Array,
+    t_vec: jax.Array,
+    intrinsic_vec: jax.Array,
+    consts,
 ) -> dict[str, jax.Array]:
     means3d = params["means3d"]
     quats = params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True))
@@ -65,7 +84,7 @@ def project(
     covs = compute_cov_vmap(quats, scales)
 
     # 3D Gaussianの3D共分散を2D画面に投影したときの2D共分散を計算
-    covs_2d = to_2dcov_vmap(means3d, covs, rot_mat, t_vec, intrinsic_vec)
+    covs_2d = to_2dcov_vmap(means3d, covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"])
 
     return {
         "means_2d": projected_points,
@@ -78,4 +97,4 @@ def project(
 
 project_point_vmap = jax.vmap(project_point, in_axes=(0, None, None, None))
 compute_cov_vmap = jax.vmap(compute_cov, in_axes=(0, 0))
-to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None, None))
+to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None, None, None))

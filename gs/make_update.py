@@ -58,7 +58,7 @@ def make_updater(
 
 def make_render(consts: dict[str, int | float | jax.Array], *, jit: bool = True) -> Callable:
     def render(params: dict[str, jax.Array], view: dict[str, jax.Array]) -> jax.Array:
-        projected_gaussians = project(params, **view)
+        projected_gaussians = project(params, **view, consts=consts)
 
         return rasterize(projected_gaussians, consts)
 
