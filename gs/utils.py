@@ -136,10 +136,8 @@ def _compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
 def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
-    # 近傍の3点の平均距離で設定
     nearest_distances = _compute_nearest_distances(points_3d) ** 2
     scales = np.log(np.clip(nearest_distances, 0.01, 3.0))[:, np.newaxis].repeat(3, axis=1)
-    # scales = np.log(np.ones((num_points, 3)) * 0.01)
 
     # 回転なし
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
