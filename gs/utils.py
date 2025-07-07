@@ -1,6 +1,6 @@
+from collections.abc import Iterator
 from pathlib import Path
 
-import grain  # type: ignore[import-untyped]
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
@@ -80,34 +80,45 @@ def _load_image_and_fit(image_path: Path, image_scale: float) -> npt.NDArray:
     return np.asarray(resized_image).astype(np.float32) / 255.0
 
 
-def create_view_dataloader(
-    image_batch: npt.NDArray,
-    camera_params: dict[str, npt.NDArray],
-    n_epochs: int,
-    *,
-    shuffle: bool = True,
-) -> tuple[grain.DataLoader, tuple[int, int]]:
-    camera_param_list = [
-        {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic}
-        for rot_mat, t_vec, intrinsic in zip(
-            camera_params["rot_mat_batch"],
-            camera_params["t_vec_batch"],
-            camera_params["intrinsic_batch"],
-            strict=True,
-        )
-    ]
+class ImageViewDataLoader:
+    def __init__(
+        self,
+        camera_params: dict[str, npt.NDArray],
+        image_batch: npt.NDArray,
+        n_epochs: int = 1,
+        seed: int = 42,
+        *,
+        shuffle: bool = True,
+    ) -> None:
+        view_list = [
+            {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic}
+            for rot_mat, t_vec, intrinsic in zip(
+                camera_params["rot_mat_batch"],
+                camera_params["t_vec_batch"],
+                camera_params["intrinsic_batch"],
+                strict=True,
+            )
+        ]
+        self.data = list(zip(view_list, image_batch, strict=True))
+        self.shuffle = shuffle
+        self.num_epochs = n_epochs
+        self.seed = seed
+        self.rng = np.random.RandomState(seed)
 
-    data_source = grain.MapDataset.source(
-        list(zip(camera_param_list, image_batch, strict=True))
-    ).shuffle(seed=42)
+    def __iter__(self) -> Iterator[tuple[dict[str, npt.NDArray], npt.NDArray]]:
+        for epoch in range(self.num_epochs):
+            # エポックごとに新しいシードを設定
+            epoch_rng = np.random.RandomState(self.seed + epoch)
 
-    index_sampler = grain.samplers.IndexSampler(
-        num_records=len(image_batch),
-        shuffle=shuffle,
-        num_epochs=n_epochs,
-        seed=123,
-    )
-    return grain.DataLoader(data_source=data_source, sampler=index_sampler)  # type: ignore[arg-type]
+            indices = np.arange(len(self.data))
+            if self.shuffle:
+                epoch_rng.shuffle(indices)
+
+            for idx in indices:
+                yield self.data[idx]
+
+    def __len__(self) -> int:
+        return len(self.data) * self.num_epochs
 
 
 def _compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
@@ -166,8 +177,8 @@ def build_params(
     reconstruction_data, camera_params, image_batch = load_colmap_data(
         colmap_data_path, image_scale
     )
-    image_dataloader = create_view_dataloader(
-        image_batch, camera_params, n_epochs=n_epochs, shuffle=True
+    image_dataloader = ImageViewDataLoader(
+        camera_params, image_batch, n_epochs=n_epochs, shuffle=True
     )
 
     points_3d = reconstruction_data["points_3d"]
