@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
+from gs.density_control import densify_gaussians, prune_gaussians
 from gs.make_update import DataLogger, make_updater
 from gs.projection import project_point_vmap
 from gs.utils import build_params
