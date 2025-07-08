@@ -15,51 +15,35 @@ def prune_gaussians(params, consts):
 
 
 def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, view):
-    target_indices = view_space_grads_mean_norm > consts["tau_pos"]
-
-    target_params = {key: val[target_indices] for key, val in params.items()}
-    target_pos_grads = pos_grads[target_indices]
-
-    # view space covarianceの計算
-    covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
-    covs_2d = to_2dcov_vmap(
-        target_params["means3d"],
-        covs_3d,
-        view["rot_mat"],
-        view["t_vec"],
-        view["intrinsic_vec"],
-        consts["img_shape"],
-    )
-    max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
-
-    clone_indices = max_eigvals < consts["eps_clone_eigval"]
-    split_indices = max_eigvals >= consts["eps_clone_eigval"]
-    split_num = consts["split_num"]
-
-    # 分割後のガウシアン数が最大ガウシアン数を超えている場合、最大ガウシアン数に収まるようにランダムサンプルする
+    tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_points"] - params["means3d"].shape[0]
-    densification_num = clone_indices.sum() + split_indices.sum() * (split_num - 1)
-    if max_densification_num < densification_num:
-        print(
-            f"The Gaussians to be split are {densification_num}, "
-            f"but the maximum allowed is {max_densification_num}, "
-            "so we'll randomly sample to fit within the maximum limit."
+
+    while True:
+        target_indices = view_space_grads_mean_norm > tau_pos
+
+        target_params = {key: val[target_indices] for key, val in params.items()}
+        target_pos_grads = pos_grads[target_indices]
+
+        # view space covarianceの計算
+        covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
+        covs_2d = to_2dcov_vmap(
+            target_params["means3d"],
+            covs_3d,
+            view["rot_mat"],
+            view["t_vec"],
+            view["intrinsic_vec"],
+            consts["img_shape"],
         )
-        rng = np.random.default_rng(455)
-        ind_arr = np.array(range(max_eigvals.shape[0]))
-        if clone_indices.sum() > max_densification_num // 2:
-            clone_indices = np.isin(
-                ind_arr, rng.choice(np.where(clone_indices)[0], max_densification_num // 2)
-            )
-        if split_indices.sum() > max_densification_num // 2:
-            split_indices = np.isin(
-                ind_arr, rng.choice(np.where(split_indices)[0], max_densification_num // 2)
-            )
-        exclude_indices = ~clone_indices & ~split_indices
-        exclude_numbers = np.where(target_indices)[0][exclude_indices]
-        target_indices[exclude_numbers] = False
-        # 分割対象のガウシアン数を増やすため、分割数を2に設定
-        split_num = 2
+        max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
+        clone_indices = max_eigvals < consts["eps_clone_eigval"]
+        split_indices = max_eigvals >= consts["eps_clone_eigval"]
+        split_num = consts["split_num"]
+
+        densification_num = clone_indices.sum() + split_indices.sum() * (split_num - 1)
+        if densification_num <= max_densification_num:
+            print(f"Changed tau_pos to {tau_pos} to fit within the maximum number of Gaussians")
+            break
+        tau_pos *= 2.0
 
     clone_params, cloned_num = clone_gaussians(
         target_params, target_pos_grads, clone_indices, consts
