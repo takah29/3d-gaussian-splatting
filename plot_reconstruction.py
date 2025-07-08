@@ -27,7 +27,9 @@ def plot_reconstruction(reconstruction) -> None:
     ) -> list[npt.NDArray]:
         line_collection = []
         for quat, t_vec in zip(quat_batch, t_vec_batch, strict=True):
-            rot_mat_scaled = Rotation.from_quat(quat).as_matrix().T * 0.3
+            rot_mat = Rotation.from_quat(quat).as_matrix()
+            rot_mat_scaled = rot_mat.T * 0.3
+            t_vec = -rot_mat.T @ t_vec
             line_collection.append(np.array([t_vec, t_vec + rot_mat_scaled[:, 0]]))
             line_collection.append(np.array([t_vec, t_vec + rot_mat_scaled[:, 1]]))
             line_collection.append(np.array([t_vec, t_vec + rot_mat_scaled[:, 2]]))
@@ -63,17 +65,17 @@ def main() -> None:
     parser.add_argument("base_path", type=Path)
     args = parser.parse_args()
 
-    data = load_colmap_data(args.base_path, quatanion=True)
+    points, camera_params, image_batch = load_colmap_data(args.base_path, 1.0, quatanion=True)
 
     # 読み込んだデータの情報を整形して表示
     print("===== Data Information =====")
-    print(f"{data['points_3d'].shape=}")
-    print(f"{data['quat_batch'].shape=}")
-    print(f"{data['t_vec_batch'].shape=}")
-    print(f"{data['intrinsic_batch'].shape=}")
+    print(f"{points['points_3d'].shape=}")
+    print(f"{camera_params['quat_batch'].shape=}")
+    print(f"{camera_params['t_vec_batch'].shape=}")
+    print(f"{camera_params['intrinsic_batch'].shape=}")
     print("==============================")
 
-    plot_reconstruction(data)
+    plot_reconstruction({**points, **camera_params})
 
 
 if __name__ == "__main__":
