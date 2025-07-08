@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 from scipy.special import expit
 
-from gs.projection import compute_cov_vmap, to_2dcov_vmap
+from gs.projection import compute_cov_vmap
 
 
 def prune_gaussians(params, consts):
@@ -20,23 +20,12 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
 
     while True:
         target_indices = view_space_grads_mean_norm > tau_pos
-
         target_params = {key: val[target_indices] for key, val in params.items()}
-        target_pos_grads = pos_grads[target_indices]
 
         # view space covarianceの計算
-        covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
-        covs_2d = to_2dcov_vmap(
-            target_params["means3d"],
-            covs_3d,
-            view["rot_mat"],
-            view["t_vec"],
-            view["intrinsic_vec"],
-            consts["img_shape"],
-        )
-        max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
-        clone_indices = max_eigvals < consts["eps_clone_eigval"]
-        split_indices = max_eigvals >= consts["eps_clone_eigval"]
+        max_scales = np.exp(target_params["scales"].max(axis=1))
+        clone_indices = max_scales < consts["scale_threshold"] * consts["extent"]
+        split_indices = max_scales >= consts["scale_threshold"] * consts["extent"]
         split_num = consts["split_num"]
 
         densification_num = clone_indices.sum() + split_indices.sum() * (split_num - 1)
@@ -45,9 +34,11 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
             break
         tau_pos *= 2.0
 
+    target_pos_grads = pos_grads[target_indices]
     clone_params, cloned_num = clone_gaussians(
         target_params, target_pos_grads, clone_indices, consts
     )
+    covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
     split_params, splited_num = split_gaussians(
         target_params, target_pos_grads, covs_3d, split_indices, consts, split_num
     )

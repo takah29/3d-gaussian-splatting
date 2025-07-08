@@ -3,7 +3,6 @@ import pickle
 from pathlib import Path
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import optax
 
@@ -23,7 +22,7 @@ def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     position_lr_scheduler = optax.exponential_decay(
         init_value=1e-4 * extent * lr_scale,
         transition_steps=total_iter,
-        decay_rate=0.01,  # 最終値/初期値
+        decay_rate=0.01,
         end_value=1e-6 * extent * lr_scale,
     )
 
@@ -75,7 +74,7 @@ def main() -> None:
         params, grads, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
-        view_space_grads_norm = jnp.linalg.norm(viewspace_grads, axis=1)
+        view_space_grads_norm = np.linalg.norm(viewspace_grads, axis=1)
         view_space_grads_norm_acc += view_space_grads_norm
         update_count_arr += view_space_grads_norm > 0.0
 
@@ -88,8 +87,8 @@ def main() -> None:
             update_count_arr = np.array(update_count_arr)
 
             enable_mask = view_space_grads_norm_acc > 0.0
-            view_space_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
-            view_space_grads_mean_norm[enable_mask] = (
+            viewspace_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
+            viewspace_grads_mean_norm[enable_mask] = (
                 view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
             )
 
@@ -97,7 +96,7 @@ def main() -> None:
             print("===== Densification and Pruning ======")
             if i <= consts["densify_until_iter"]:
                 params, cloned_num, splitted_num = densify_gaussians(
-                    params, grads_means_3d, view_space_grads_mean_norm, consts, view
+                    params, grads_means_3d, viewspace_grads_mean_norm, consts, view
                 )
             # alpha値が低いガウシアンの消去
             params, pruned_num = prune_gaussians(params, consts)
@@ -108,7 +107,7 @@ def main() -> None:
             print(
                 f"num of gaussian: {params['means3d'].shape[0] - delta_num} -> {params['means3d'].shape[0]}"
             )
-            print("========================")
+            print("======================================")
 
             opt_state = optimizer.init(params)
             view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
