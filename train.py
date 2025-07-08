@@ -9,7 +9,6 @@ import optax
 
 from gs.density_control import densify_gaussians, prune_gaussians
 from gs.make_update import DataLogger, make_updater
-from gs.projection import project_point_vmap
 from gs.utils import build_params
 
 
@@ -43,22 +42,6 @@ def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     return optimizer
 
 
-@jax.jit
-def compute_view_space_grads_norm(next_params, current_grads, view):
-    next_params_means_2d, _ = project_point_vmap(
-        next_params["means3d"], view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
-    )
-    current_params_means_2d, _ = project_point_vmap(
-        next_params["means3d"] - current_grads["means3d"],
-        view["rot_mat"],
-        view["t_vec"],
-        view["intrinsic_vec"],
-    )
-    view_space_grads_norm = jnp.linalg.norm(next_params_means_2d - current_params_means_2d, axis=-1)
-
-    return view_space_grads_norm
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -89,10 +72,10 @@ def main() -> None:
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
 
     for i, (view, target) in enumerate(image_dataloader, start=1):
-        params, grads, opt_state, loss = update(params, view, target, opt_state)
+        params, grads, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
-        view_space_grads_norm = compute_view_space_grads_norm(params, grads, view)
+        view_space_grads_norm = jnp.linalg.norm(viewspace_grads, axis=1)
         view_space_grads_norm_acc += view_space_grads_norm
         update_count_arr += view_space_grads_norm > 0.0
 

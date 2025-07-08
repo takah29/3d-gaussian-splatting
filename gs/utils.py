@@ -156,7 +156,7 @@ def _init_consts(
         "max_points": max_points,
         "extent": extent,
         "eps_prune_alpha": 0.05,
-        "tau_pos": 0.3,
+        "tau_pos": 0.0002,
         "eps_clone_eigval": 5.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,

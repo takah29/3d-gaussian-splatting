@@ -30,17 +30,26 @@ def make_updater(
     *,
     jit: bool = True,
 ) -> Callable:
-    render_fn = make_render(consts, jit=jit)
-
-    def loss_fn(
-        params: dict[str, jax.Array], view: dict[str, jax.Array], target: jax.Array
-    ) -> jax.Array:
-        output = render_fn(params, view)
+    def loss_fn(means_2d, fixed_params, target) -> jax.Array:
+        projected_gaussians = {"means_2d": means_2d, **fixed_params}
+        output = rasterize(projected_gaussians, consts)
         jax.debug.callback(callback, output)
         loss = l1_loss(output, target)
         return loss
 
-    compute_loss_and_grad = jax.value_and_grad(loss_fn)
+    def loss_fn_for_params(
+        params: dict[str, jax.Array], view: dict[str, jax.Array], target: jax.Array
+    ) -> tuple[jax.Array, dict[str, jax.Array]]:
+        projected_gaussians = project(params, **view, consts=consts)
+
+        # View-Space Gradientsを中間勾配として取得する
+        means_2d = projected_gaussians["means_2d"]
+        fixed_params = {k: v for k, v in projected_gaussians.items() if k != "means_2d"}
+        loss, viewspace_grads = jax.value_and_grad(loss_fn)(means_2d, fixed_params, target)
+
+        return loss, viewspace_grads
+
+    compute_loss_and_grad = jax.value_and_grad(loss_fn_for_params, has_aux=True)
 
     def update(
         params: Params,
@@ -48,10 +57,10 @@ def make_updater(
         target: jax.Array,
         opt_state: OptState,
     ) -> tuple[Params, dict[str, jax.Array], OptState, jax.Array]:
-        loss, grads = compute_loss_and_grad(params, view, target)
+        (loss, viewspace_grads), grads = compute_loss_and_grad(params, view, target)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
-        return params, grads, opt_state, loss
+        return params, grads, opt_state, loss, viewspace_grads
 
     return jax.jit(update, donate_argnames=("params",)) if jit else update
 
