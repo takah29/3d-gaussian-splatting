@@ -23,7 +23,12 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
     # view space covarianceの計算
     covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
     covs_2d = to_2dcov_vmap(
-        target_params["means3d"], covs_3d, view["rot_mat"], view["t_vec"], view["intrinsic_vec"]
+        target_params["means3d"],
+        covs_3d,
+        view["rot_mat"],
+        view["t_vec"],
+        view["intrinsic_vec"],
+        consts["img_shape"],
     )
     max_eigvals = np.linalg.eigvalsh(covs_2d).max(axis=1)
 
@@ -42,12 +47,14 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
         )
         rng = np.random.default_rng(455)
         ind_arr = np.array(range(max_eigvals.shape[0]))
-        clone_indices = np.isin(
-            ind_arr, rng.choice(np.where(clone_indices)[0], max_densification_num // 2)
-        )
-        split_indices = np.isin(
-            ind_arr, rng.choice(np.where(split_indices)[0], max_densification_num // 2)
-        )
+        if clone_indices.sum() > max_densification_num // 2:
+            clone_indices = np.isin(
+                ind_arr, rng.choice(np.where(clone_indices)[0], max_densification_num // 2)
+            )
+        if split_indices.sum() > max_densification_num // 2:
+            split_indices = np.isin(
+                ind_arr, rng.choice(np.where(split_indices)[0], max_densification_num // 2)
+            )
         exclude_indices = ~clone_indices & ~split_indices
         exclude_numbers = np.where(target_indices)[0][exclude_indices]
         target_indices[exclude_numbers] = False
