@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
 
-from gs.loss_function import l1_loss
+from gs.loss_function import gs_loss
 from gs.projection import project
 from gs.rasterization import rasterize
 
@@ -34,7 +34,7 @@ def make_updater(
         projected_gaussians = {"means_2d": means_2d, **fixed_params}
         output = rasterize(projected_gaussians, consts)
         jax.debug.callback(callback, output)
-        loss = l1_loss(output, target)
+        loss = gs_loss(output, target)
         return loss
 
     def loss_fn_for_params(
