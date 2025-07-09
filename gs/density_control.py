@@ -14,7 +14,7 @@ def prune_gaussians(params, consts):
     return pruned_params, prune_indices.sum()
 
 
-def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, view):
+def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts):
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_points"] - params["means3d"].shape[0]
 
@@ -35,12 +35,10 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
         tau_pos *= 2.0
 
     target_pos_grads = pos_grads[target_indices]
-    clone_params, cloned_num = clone_gaussians(
-        target_params, target_pos_grads, clone_indices, consts
-    )
+    clone_params, cloned_num = clone_gaussians(target_params, target_pos_grads, clone_indices)
     covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
     split_params, splited_num = split_gaussians(
-        target_params, target_pos_grads, covs_3d, split_indices, consts, split_num
+        target_params, covs_3d, split_indices, consts, split_num
     )
 
     params = {
@@ -51,7 +49,7 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts, vie
     return params, cloned_num, splited_num
 
 
-def clone_gaussians(params, pos_grads, clone_indices, consts):
+def clone_gaussians(params, pos_grads, clone_indices):
     clone_params = {key: val[clone_indices] for key, val in params.items()}
 
     # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
@@ -64,7 +62,7 @@ def clone_gaussians(params, pos_grads, clone_indices, consts):
     return merged_params, clone_indices.sum()
 
 
-def split_gaussians(params, pos_grads, covs_3d, split_indices, consts, split_num):
+def split_gaussians(params, covs_3d, split_indices, consts, split_num):
     split_params = {key: val[split_indices] for key, val in params.items()}
 
     key = jax.random.PRNGKey(0)

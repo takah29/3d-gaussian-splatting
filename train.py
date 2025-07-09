@@ -53,6 +53,10 @@ def save_params_pkl(save_pkl_path: Path, params, camera_params, consts):
         pickle.dump(result, f)
 
 
+def to_numpy_dict(arr_dict):
+    return {key: np.array(val) for key, val in arr_dict.items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -85,40 +89,44 @@ def main() -> None:
         params, grads, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
-        view_space_grads_norm = np.linalg.norm(viewspace_grads, axis=1)
-        view_space_grads_norm_acc += view_space_grads_norm
-        update_count_arr += view_space_grads_norm > 0.0
-
+        # 途中経過のパラメータを保存
         if i % args.checkpoint_cycle == 0:
             save_params_pkl(
                 save_dirpath / f"params_checkpoint_iter{i:05d}.pkl",
-                params,
-                image_dataloader.camera_params,
-                consts,
+                *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
             )
+
+        if i <= consts["densify_until_iter"]:
+            # 密度化に使用する勾配ノルムを加算
+            view_space_grads_norm = np.linalg.norm(viewspace_grads, axis=1)
+            view_space_grads_norm_acc += view_space_grads_norm
+            update_count_arr += view_space_grads_norm > 0.0
 
         # ガウシアンの分割と除去
         if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
+            print("===== Densification and Pruning ======")
             # 配列の動的な処理を行うのでnumpy配列に変換
-            params = {key: np.array(val) for key, val in params.items()}
-            grads_means_3d = np.array(grads["means3d"])
-            view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
-            update_count_arr = np.array(update_count_arr)
-
-            enable_mask = view_space_grads_norm_acc > 0.0
-            viewspace_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
-            viewspace_grads_mean_norm[enable_mask] = (
-                view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
-            )
+            params = to_numpy_dict(params)
 
             cloned_num, splitted_num = 0, 0
-            print("===== Densification and Pruning ======")
             if i <= consts["densify_until_iter"]:
-                params, cloned_num, splitted_num = densify_gaussians(
-                    params, grads_means_3d, viewspace_grads_mean_norm, consts, view
+                grads_means_3d = np.array(grads["means3d"])
+                view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
+                update_count_arr = np.array(update_count_arr)
+
+                enable_mask = view_space_grads_norm_acc > 0.0
+                viewspace_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
+                viewspace_grads_mean_norm[enable_mask] = (
+                    view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
                 )
+
+                params, cloned_num, splitted_num = densify_gaussians(
+                    params, grads_means_3d, viewspace_grads_mean_norm, consts
+                )
+
             # alpha値が低いガウシアンの消去
             params, pruned_num = prune_gaussians(params, consts)
+
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
             )
@@ -129,12 +137,16 @@ def main() -> None:
             )
             print("======================================")
 
-            opt_state = optimizer.init(params)
+            # 勾配ノルムの蓄積をリセット
             view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
             update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
 
+            # paramsのデータ数が変わるのでoptimizerを初期化する
+            opt_state = optimizer.init(params)
+
     save_params_pkl(
-        save_dirpath / "params_final.pkl", params, image_dataloader.camera_params, consts
+        save_dirpath / "params_final.pkl",
+        *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
     )
 
 
