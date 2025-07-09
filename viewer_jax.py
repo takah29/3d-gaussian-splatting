@@ -118,7 +118,7 @@ class Viewer:
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
         if not glfw.init():
-            sys.exit("FATAL ERROR: glfwの初期化に失敗しました。")
+            sys.exit("FATAL ERROR: glfw initialization failed.")
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
@@ -127,7 +127,7 @@ class Viewer:
         )
         if not self.window:
             glfw.terminate()
-            sys.exit("FATAL ERROR: glfwウィンドウの作成に失敗しました。")
+            sys.exit("FATAL ERROR: Failed to create glfw window.")
         glfw.make_context_current(self.window)
         glfw.swap_interval(1)
         self.update_window_title()
