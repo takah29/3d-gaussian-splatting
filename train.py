@@ -63,25 +63,24 @@ def main() -> None:
     parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
     parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
+    parser.add_argument("-s", "--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
     args = parser.parse_args()
 
     params, consts, image_dataloader = build_params(
         args.colmap_data_path, args.max_points, args.image_scale, args.n_epochs
     )
 
-    optimizer = optax.chain(
-        # optax.clip(0.01),
-        get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader)),
-    )
+    optimizer = get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader))
     opt_state = optimizer.init(params)
 
-    logger = DataLogger(Path(__file__).parent / "progress")
+    save_dirpath = Path(__file__).parent / "output"
+    save_dirpath.mkdir(parents=True, exist_ok=True)
+    # logger = DataLogger(save_dirpath / "progress")
 
-    update = make_updater(consts, optimizer, logger, jit=True)
+    update = make_updater(consts, optimizer, jit=True)
 
     view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
-
     for i, (view, target) in enumerate(image_dataloader, start=1):
         params, grads, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
@@ -89,6 +88,14 @@ def main() -> None:
         view_space_grads_norm = np.linalg.norm(viewspace_grads, axis=1)
         view_space_grads_norm_acc += view_space_grads_norm
         update_count_arr += view_space_grads_norm > 0.0
+
+        if i % args.checkpoint_cycle == 0:
+            save_params_pkl(
+                save_dirpath / f"params_checkpoint_iter{i:05d}.pkl",
+                params,
+                image_dataloader.camera_params,
+                consts,
+            )
 
         # ガウシアンの分割と除去
         if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
@@ -117,7 +124,8 @@ def main() -> None:
             )
             delta_num = cloned_num + splitted_num - pruned_num
             print(
-                f"num of gaussian: {params['means3d'].shape[0] - delta_num} -> {params['means3d'].shape[0]}"
+                f"num of gaussian: {params['means3d'].shape[0] - delta_num} "
+                f"-> {params['means3d'].shape[0]}"
             )
             print("======================================")
 
