@@ -1,5 +1,7 @@
+import argparse
 import pickle
 import sys
+from pathlib import Path
 
 import glfw
 import moderngl
@@ -38,17 +40,10 @@ class Camera:
 
 
 class GaussianRenderer:
-    def __init__(self, pkl_path: str):
-        try:
-            with open(pkl_path, "rb") as f:
-                reconstruction = pickle.load(f)
-        except FileNotFoundError:
-            print(f"エラー: '{pkl_path}' が見つかりません。")
-            sys.exit(1)
-
-        self.params = reconstruction["params"]
-        self.consts = reconstruction["consts"]
-        self.camera_params = reconstruction["camera_params"]
+    def __init__(self, params, camera_params, consts):
+        self.params = params
+        self.consts = consts
+        self.camera_params = camera_params
         self.render_fn = make_render(self.consts, jit=True)
 
     def render(self, view_params: dict) -> np.ndarray:
@@ -78,7 +73,7 @@ class Viewer:
         }
     """
 
-    def __init__(self, window_size=(980, 545), pkl_path="reconstructed.pkl"):
+    def __init__(self, params, camera_params, consts):
         if not glfw.init():
             sys.exit("FATAL ERROR: glfwの初期化に失敗しました。")
 
@@ -86,7 +81,7 @@ class Viewer:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            window_size[0], window_size[1], "3D Gaussian Splatting Viewer", None, None
+            *consts["img_shape"][::-1], "3D Gaussian Splatting Viewer", None, None
         )
         if not self.window:
             glfw.terminate()
@@ -106,7 +101,7 @@ class Viewer:
         self.last_mouse_pos = None
         self.camera_dirty = True
 
-        self.renderer = GaussianRenderer(pkl_path)
+        self.renderer = GaussianRenderer(params, camera_params, consts)
         self.num_cameras = len(self.renderer.camera_params["t_vec_batch"])
         self.current_cam_index = 0
 
@@ -117,7 +112,7 @@ class Viewer:
         self.mouse_sensitivity_zoom = 0.1
 
         # レンダリング解像度は起動時のまま固定
-        self.render_width, self.render_height = window_size
+        self.render_width, self.render_height = consts["img_shape"][::-1]
         self.render_aspect_ratio = self.render_width / self.render_height
         self.image_texture = self.ctx.texture(
             (self.render_width, self.render_height), 3, dtype="f4"
@@ -135,7 +130,7 @@ class Viewer:
         )
 
         # 起動時のウィンドウサイズでビューポートを初期設定
-        self.framebuffer_size_callback(self.window, *window_size)
+        self.framebuffer_size_callback(self.window, *consts["img_shape"][::-1])
 
     def framebuffer_size_callback(self, window, width, height):
         """ウィンドウのフレームバッファサイズが変更されたときに呼び出される"""
@@ -237,11 +232,24 @@ class Viewer:
         glfw.terminate()
 
 
-if __name__ == "__main__":
-    PKL_FILE_PATH = "reconstructed.pkl"
-    with open(PKL_FILE_PATH, "rb") as f:
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-f",
+        "--params_filepath",
+        type=Path,
+        default=Path(__file__).parent / "output" / "params_final.pkl",
+        help="Path to the params pickle file",
+    )
+    args = parser.parse_args()
+
+    with args.params_filepath.open("rb") as f:
         reconstruction = pickle.load(f)
     h, w = reconstruction["consts"]["img_shape"]
 
-    viewer = Viewer(window_size=(w, h), pkl_path=PKL_FILE_PATH)
+    viewer = Viewer(**reconstruction)
     viewer.run()
+
+
+if __name__ == "__main__":
+    main()

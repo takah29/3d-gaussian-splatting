@@ -7,7 +7,7 @@ import numpy as np
 import optax
 
 from gs.density_control import densify_gaussians, prune_gaussians
-from gs.make_update import DataLogger, make_updater
+from gs.make_update import get_corrected_params, make_updater
 from gs.utils import build_params
 
 
@@ -39,6 +39,18 @@ def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     optimizer = optax.multi_transform(optimizers, partition_params)
 
     return optimizer
+
+
+def save_params_pkl(save_pkl_path: Path, params, camera_params, consts):
+    result = {
+        "params": get_corrected_params(params),
+        "consts": consts,
+        "camera_params": camera_params,
+    }
+    result = jax.tree.map(lambda x: np.array(x), result)
+
+    with save_pkl_path.open("wb") as f:
+        pickle.dump(result, f)
 
 
 def main() -> None:
@@ -113,16 +125,9 @@ def main() -> None:
             view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
             update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
 
-    result = {
-        "params": params,
-        "consts": consts,
-        "target_image_dir_path": args.colmap_data_path / "images",
-    }
-    result = jax.tree.map(lambda x: np.array(x), result)
-
-    output_path = Path(__file__).parent / "reconstructed.pkl"
-    with output_path.open("wb") as f:
-        pickle.dump(result, f)
+    save_params_pkl(
+        save_dirpath / "params_final.pkl", params, image_dataloader.camera_params, consts
+    )
 
 
 if __name__ == "__main__":

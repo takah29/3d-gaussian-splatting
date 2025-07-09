@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
@@ -23,6 +24,17 @@ class DataLogger:
         self.count += 1
 
 
+def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    """パラメータを補正"""
+    return {
+        "means3d": params["means3d"],
+        "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
+        "scales": jnp.exp(params["scales"]),
+        "colors": jax.nn.sigmoid(params["colors"]),
+        "opacities": jnp.minimum(jax.nn.sigmoid(params["opacities"]), 0.99),
+    }
+
+
 def make_updater(
     consts: dict[str, int | float | jax.Array],
     optimizer: GradientTransformationExtraArgs,
@@ -30,7 +42,10 @@ def make_updater(
     *,
     jit: bool = True,
 ) -> Callable:
-    def loss_fn(means_2d, fixed_params, target) -> jax.Array:
+    def loss_fn_for_mean2d(
+        means_2d: jax.Array, fixed_params: dict[str, jax.Array], target: jax.Array
+    ) -> jax.Array:
+        """密度制御のためのView-Space Gradientsを中間勾配として取得するための損失関数"""
         projected_gaussians = {"means_2d": means_2d, **fixed_params}
         output = rasterize(projected_gaussians, consts)
         jax.debug.callback(callback, output)
@@ -40,14 +55,17 @@ def make_updater(
     def loss_fn_for_params(
         params: dict[str, jax.Array], view: dict[str, jax.Array], target: jax.Array
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
-        projected_gaussians = project(params, **view, consts=consts)
+        corrected_params = get_corrected_params(params)
+        projected_gaussians = project(corrected_params, **view, consts=consts)
 
         # View-Space Gradientsを中間勾配として取得する
         means_2d = projected_gaussians["means_2d"]
         fixed_params = {k: v for k, v in projected_gaussians.items() if k != "means_2d"}
-        loss, viewspace_grads = jax.value_and_grad(loss_fn)(means_2d, fixed_params, target)
+        loss, viewspace_grads = jax.value_and_grad(loss_fn_for_mean2d)(
+            means_2d, fixed_params, target
+        )
 
-        return loss, viewspace_grads
+        return loss, viewspace_grads  # viewspace_gradsは補助データとして返す
 
     compute_loss_and_grad = jax.value_and_grad(loss_fn_for_params, has_aux=True)
 
@@ -56,7 +74,7 @@ def make_updater(
         view: dict[str, jax.Array],
         target: jax.Array,
         opt_state: OptState,
-    ) -> tuple[Params, dict[str, jax.Array], OptState, jax.Array]:
+    ) -> tuple[Params, dict[str, jax.Array], OptState, jax.Array, dict[str, jax.Array]]:
         (loss, viewspace_grads), grads = compute_loss_and_grad(params, view, target)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)

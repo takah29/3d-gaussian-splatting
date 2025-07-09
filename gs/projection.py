@@ -71,27 +71,23 @@ def project(
     intrinsic_vec: jax.Array,
     consts,
 ) -> dict[str, jax.Array]:
-    means3d = params["means3d"]
-    quats = params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True))
-    scales = jnp.exp(params["scales"])
-    colors = jax.nn.sigmoid(params["colors"])
-    opacities = jnp.minimum(jax.nn.sigmoid(params["opacities"]), 0.99)
-
     # 3D Gaussianの中心点を2D画面に投影するときの座標値を計算
-    projected_points, depths = project_point_vmap(means3d, rot_mat, t_vec, intrinsic_vec)
+    projected_points, depths = project_point_vmap(params["means3d"], rot_mat, t_vec, intrinsic_vec)
 
     # 3D Gaussianの3D共分散を計算
-    covs = compute_cov_vmap(quats, scales)
+    covs = compute_cov_vmap(params["quats"], params["scales"])
 
     # 3D Gaussianの3D共分散を2D画面に投影したときの2D共分散を計算
-    covs_2d_raw = to_2dcov_vmap(means3d, covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"])
+    covs_2d_raw = to_2dcov_vmap(
+        params["means3d"], covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"]
+    )
     covs_2d = covs_2d_raw + jnp.eye(2) * 0.3
 
     return {
         "means_2d": projected_points,
         "covs_2d": covs_2d,
-        "colors": colors,
-        "opacities": opacities,
+        "colors": params["colors"],
+        "opacities": params["opacities"],
         "depths": depths,
     }
 
