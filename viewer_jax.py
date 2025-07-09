@@ -73,15 +73,29 @@ class Viewer:
         }
     """
 
-    def __init__(self, params, camera_params, consts):
+    def __init__(self, pkl_files, initial_data, initial_index):
         if not glfw.init():
             sys.exit("FATAL ERROR: glfwの初期化に失敗しました。")
 
+        self.pkl_files = pkl_files
+        self.current_data_index = initial_index
+        # キャッシュにはparamsのみを保存
+        self.params_cache = {initial_index: initial_data["params"]}
+
+        # --- 初回ロード時に不変のパラメータを設定 ---
+        params = initial_data["params"]
+        self.camera_params = initial_data["camera_params"]
+        self.consts = initial_data["consts"]
+
+        self.render_width, self.render_height = self.consts["img_shape"][::-1]
+        self.render_aspect_ratio = self.render_width / self.render_height
+
+        # --- ウィンドウとOpenGLコンテキストの初期化 ---
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            *consts["img_shape"][::-1], "3D Gaussian Splatting Viewer", None, None
+            self.render_width, self.render_height, "3D Gaussian Splatting Viewer", None, None
         )
         if not self.window:
             glfw.terminate()
@@ -90,30 +104,31 @@ class Viewer:
         glfw.swap_interval(1)
         self.ctx = moderngl.create_context(require=330)
 
+        # --- イベントコールバックの設定 ---
         glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
         glfw.set_key_callback(self.window, self.key_event)
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
         glfw.set_scroll_callback(self.window, self.scroll_callback)
 
+        # --- レンダラとカメラの初期化 ---
+        self.renderer = GaussianRenderer(params, self.camera_params, self.consts)
+        self.num_cameras = len(self.camera_params["t_vec_batch"])
+        self.current_cam_index = 0
+
+        initial_pos, initial_rot = self.get_colmap_camera_state(self.current_cam_index)
+        self.camera = Camera(initial_pos, initial_rot)
+
+        # --- マウスと描画状態の初期化 ---
         self.left_mouse_dragging = False
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
-        self.camera_dirty = True
-
-        self.renderer = GaussianRenderer(params, camera_params, consts)
-        self.num_cameras = len(self.renderer.camera_params["t_vec_batch"])
-        self.current_cam_index = 0
-
-        initial_pos, initial_rot = self.get_colmap_camera_state(0)
-        self.camera = Camera(initial_pos, initial_rot)
         self.mouse_sensitivity_orbit = 0.2
         self.mouse_sensitivity_pan = 0.002
         self.mouse_sensitivity_zoom = 0.1
+        self.camera_dirty = True
 
-        # レンダリング解像度は起動時のまま固定
-        self.render_width, self.render_height = consts["img_shape"][::-1]
-        self.render_aspect_ratio = self.render_width / self.render_height
+        # --- OpenGL描画オブジェクトの初期化 ---
         self.image_texture = self.ctx.texture(
             (self.render_width, self.render_height), 3, dtype="f4"
         )
@@ -129,51 +144,89 @@ class Viewer:
             self.program, [(vbo, "2f 2f", "in_position", "in_texcoord_0")]
         )
 
-        # 起動時のウィンドウサイズでビューポートを初期設定
-        self.framebuffer_size_callback(self.window, *consts["img_shape"][::-1])
+        self.framebuffer_size_callback(self.window, self.render_width, self.render_height)
+
+    def load_data(self, index):
+        """指定されたインデックスのparamsをロードし、レンダラを更新する"""
+        if index == self.current_data_index:
+            return
+
+        # --- キャッシュからparamsを取得、なければディスクからロード ---
+        if index in self.params_cache:
+            params = self.params_cache[index]
+            print(f"Loading from cache: {self.pkl_files[index].name}")
+        else:
+            filepath = self.pkl_files[index]
+            print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
+            try:
+                with filepath.open("rb") as f:
+                    reconstruction = pickle.load(f)
+                params = reconstruction["params"]
+                self.params_cache[index] = params  # paramsのみをキャッシュに保存
+                print(" Done.")
+            except Exception as e:
+                print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
+                return
+
+        # --- paramsをレンダラにセット ---
+        self.renderer.params = params
+        self.current_data_index = index
+        self.camera_dirty = True
+        print(
+            f"Switched to: {self.pkl_files[self.current_data_index].name} ({self.current_data_index + 1}/{len(self.pkl_files)})"
+        )
 
     def framebuffer_size_callback(self, window, width, height):
-        """ウィンドウのフレームバッファサイズが変更されたときに呼び出される"""
+        if height == 0:
+            return
         window_aspect_ratio = width / height
-
         if window_aspect_ratio > self.render_aspect_ratio:
-            # ウィンドウが横長の場合 -> 上下に黒帯
             new_height = int(width / self.render_aspect_ratio)
             new_width = width
             x_offset = 0
             y_offset = (height - new_height) // 2
         else:
-            # ウィンドウが縦長の場合 -> 左右に黒帯
             new_width = int(height * self.render_aspect_ratio)
             new_height = height
             x_offset = (width - new_width) // 2
             y_offset = 0
-
-        # 計算したビューポートを設定
         self.ctx.viewport = (x_offset, y_offset, new_width, new_height)
         self.camera_dirty = True
 
     def get_colmap_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
-        rot_mat_w2c = self.renderer.camera_params["rot_mat_batch"][index]
-        t_vec_w2c = self.renderer.camera_params["t_vec_batch"][index]
+        rot_mat_w2c = self.camera_params["rot_mat_batch"][index]
+        t_vec_w2c = self.camera_params["t_vec_batch"][index]
         c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
         c2w_position = -c2w_rotation.apply(t_vec_w2c)
         return c2w_position, c2w_rotation
 
     def key_event(self, window, key, scancode, action, mods):
+        if action == glfw.PRESS:
+            if key == glfw.KEY_UP:
+                new_index = (self.current_data_index - 1 + len(self.pkl_files)) % len(
+                    self.pkl_files
+                )
+                self.load_data(new_index)
+            elif key == glfw.KEY_DOWN:
+                new_index = (self.current_data_index + 1) % len(self.pkl_files)
+                self.load_data(new_index)
+
         if action == glfw.PRESS or action == glfw.REPEAT:
+            cam_changed = False
             if key == glfw.KEY_RIGHT:
                 self.current_cam_index = (self.current_cam_index + 1) % self.num_cameras
+                cam_changed = True
             elif key == glfw.KEY_LEFT:
                 self.current_cam_index = (
                     self.current_cam_index - 1 + self.num_cameras
                 ) % self.num_cameras
-
-            pos, rot = self.get_colmap_camera_state(self.current_cam_index)
-            self.camera.position = pos
-            self.camera.rotation = rot
-            self.camera_dirty = True
-            print(f"Jump to Camera: {self.current_cam_index + 1} / {self.num_cameras}")
+                cam_changed = True
+            if cam_changed:
+                pos, rot = self.get_colmap_camera_state(self.current_cam_index)
+                self.camera.position = pos
+                self.camera.rotation = rot
+                self.camera_dirty = True
+                print(f"Jump to Camera: {self.current_cam_index + 1} / {self.num_cameras}")
 
     def mouse_button_callback(self, window, button, action, mods):
         if action == glfw.PRESS:
@@ -192,16 +245,12 @@ class Viewer:
             return
         if self.last_mouse_pos is None:
             return
-
-        dx = xpos - self.last_mouse_pos[0]
-        dy = ypos - self.last_mouse_pos[1]
-
+        dx, dy = xpos - self.last_mouse_pos[0], ypos - self.last_mouse_pos[1]
         if self.left_mouse_dragging:
             self.camera.rotate(dx, dy, self.mouse_sensitivity_orbit)
-            self.camera_dirty = True
         if self.right_mouse_dragging:
             self.camera.pan(dx, dy, self.mouse_sensitivity_pan)
-            self.camera_dirty = True
+        self.camera_dirty = True
         self.last_mouse_pos = (xpos, ypos)
 
     def scroll_callback(self, window, xoffset, yoffset):
@@ -213,21 +262,16 @@ class Viewer:
             glfw.poll_events()
             if self.camera_dirty:
                 rot_mat, t_vec = self.camera.get_view_matrix()
-                intrinsic_vec = self.renderer.camera_params["intrinsic_batch"][
-                    self.current_cam_index
-                ]
+                intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
                 view = {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic_vec}
-
                 image_data = self.renderer.render(view)
                 self.image_texture.write(image_data.astype("f4").tobytes())
                 self.camera_dirty = False
 
-            # クリア処理はビューポート設定後に行う
             self.ctx.clear(0.0, 0.0, 0.0)
             self.image_texture.use(location=0)
             self.program["u_texture"].value = 0
             self.quad_vao.render(moderngl.TRIANGLE_STRIP)
-
             glfw.swap_buffers(self.window)
         glfw.terminate()
 
@@ -243,11 +287,35 @@ def main():
     )
     args = parser.parse_args()
 
-    with args.params_filepath.open("rb") as f:
-        reconstruction = pickle.load(f)
-    h, w = reconstruction["consts"]["img_shape"]
+    directory = args.params_filepath.parent
+    pkl_files = sorted(list(directory.glob("*.pkl")))
 
-    viewer = Viewer(**reconstruction)
+    if not pkl_files:
+        print(f"Error: No .pkl files found in {directory}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        initial_filepath = args.params_filepath.resolve()
+        initial_index = [p.resolve() for p in pkl_files].index(initial_filepath)
+    except ValueError:
+        print(
+            f"Warning: Specified file {args.params_filepath} not in the list. Starting with the first one."
+        )
+        initial_index = 0
+        initial_filepath = pkl_files[0]
+
+    print(f"Loading initial file: {initial_filepath.name}")
+    try:
+        with initial_filepath.open("rb") as f:
+            initial_data = pickle.load(f)
+    except Exception as e:
+        print(
+            f"FATAL ERROR: Could not load initial file {initial_filepath.name}: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    viewer = Viewer(pkl_files, initial_data, initial_index)
     viewer.run()
 
 
