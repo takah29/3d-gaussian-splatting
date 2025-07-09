@@ -89,7 +89,7 @@ class Viewer:
     """
     MOUSE_SENSITIVITY_ORBIT = 0.2
     MOUSE_SENSITIVITY_PAN = 0.002
-    MOUSE_SENSITIVITY_ZOOM = 0.1
+    MOUSE_SENSITIVITY_ZOOM = 0.3
 
     def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
         self.pkl_files = pkl_files
