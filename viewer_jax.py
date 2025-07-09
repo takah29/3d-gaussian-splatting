@@ -16,29 +16,23 @@ class Camera:
 
     def get_view_matrix(self) -> tuple[np.ndarray, np.ndarray]:
         """現在の位置と回転からw2cビュー行列を計算する"""
-        # w2c回転 = c2w回転の逆行列
         rot_mat = self.rotation.inv().as_matrix()
-        # w2c移動 = -(w2c回転 @ c2w位置)
         t_vec = -rot_mat @ self.position
         return rot_mat, t_vec
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """現在の回転に対して、相対的な視点回転を行う"""
-        # カメラのローカルY軸（下方向）とX軸（右方向）を回転軸とする
         rot_y = Rotation.from_rotvec(np.radians(-dx * sensitivity) * np.array([0, 1, 0]))
         rot_x = Rotation.from_rotvec(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
-        # 現在の回転に、ローカルな回転を掛け合わせる
         self.rotation = self.rotation * rot_y * rot_x
 
     def pan(self, dx: float, dy: float, sensitivity: float):
         """現在の向きを基準に、相対的なパン操作を行う"""
-        # カメラのローカルなX, Yベクトルに沿って位置を動かす
         pan_vector = np.array([-dx, -dy, 0]) * sensitivity
         self.position += self.rotation.apply(pan_vector)
 
     def zoom(self, delta: float, sensitivity: float):
         """現在の向きを基準に、相対的なズーム操作を行う"""
-        # カメラのローカルなZベクトル（奥行き）に沿って位置を動かす
         zoom_vector = np.array([0, 0, delta]) * sensitivity
         self.position += self.rotation.apply(zoom_vector)
 
@@ -85,7 +79,6 @@ class Viewer:
     """
 
     def __init__(self, window_size=(980, 545), pkl_path="reconstructed.pkl"):
-        # --- ウィンドウとコンテキストの初期化 ---
         if not glfw.init():
             sys.exit("FATAL ERROR: glfwの初期化に失敗しました。")
 
@@ -93,7 +86,7 @@ class Viewer:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            window_size[0], window_size[1], "3D Gaussian Splatting Viewer (Refactored)", None, None
+            window_size[0], window_size[1], "3D Gaussian Splatting Viewer", None, None
         )
         if not self.window:
             glfw.terminate()
@@ -102,7 +95,7 @@ class Viewer:
         glfw.swap_interval(1)
         self.ctx = moderngl.create_context(require=330)
 
-        # --- イベントハンドラと状態変数の設定 ---
+        glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
         glfw.set_key_callback(self.window, self.key_event)
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
@@ -113,20 +106,22 @@ class Viewer:
         self.last_mouse_pos = None
         self.camera_dirty = True
 
-        # --- 専門クラスのインスタンス化 ---
         self.renderer = GaussianRenderer(pkl_path)
         self.num_cameras = len(self.renderer.camera_params["t_vec_batch"])
         self.current_cam_index = 0
 
-        # --- カメラの初期化 ---
         initial_pos, initial_rot = self.get_colmap_camera_state(0)
         self.camera = Camera(initial_pos, initial_rot)
         self.mouse_sensitivity_orbit = 0.2
         self.mouse_sensitivity_pan = 0.002
         self.mouse_sensitivity_zoom = 0.1
 
-        # --- OpenGLリソースの準備 ---
-        self.image_texture = self.ctx.texture(window_size, 3, dtype="f4")
+        # レンダリング解像度は起動時のまま固定
+        self.render_width, self.render_height = window_size
+        self.render_aspect_ratio = self.render_width / self.render_height
+        self.image_texture = self.ctx.texture(
+            (self.render_width, self.render_height), 3, dtype="f4"
+        )
         self.program = self.ctx.program(
             vertex_shader=self.VERTEX_SHADER, fragment_shader=self.FRAGMENT_SHADER
         )
@@ -139,11 +134,33 @@ class Viewer:
             self.program, [(vbo, "2f 2f", "in_position", "in_texcoord_0")]
         )
 
+        # 起動時のウィンドウサイズでビューポートを初期設定
+        self.framebuffer_size_callback(self.window, *window_size)
+
+    def framebuffer_size_callback(self, window, width, height):
+        """ウィンドウのフレームバッファサイズが変更されたときに呼び出される"""
+        window_aspect_ratio = width / height
+
+        if window_aspect_ratio > self.render_aspect_ratio:
+            # ウィンドウが横長の場合 -> 上下に黒帯
+            new_height = int(width / self.render_aspect_ratio)
+            new_width = width
+            x_offset = 0
+            y_offset = (height - new_height) // 2
+        else:
+            # ウィンドウが縦長の場合 -> 左右に黒帯
+            new_width = int(height * self.render_aspect_ratio)
+            new_height = height
+            x_offset = (width - new_width) // 2
+            y_offset = 0
+
+        # 計算したビューポートを設定
+        self.ctx.viewport = (x_offset, y_offset, new_width, new_height)
+        self.camera_dirty = True
+
     def get_colmap_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
-        """指定されたCOLMAPカメラ(w2c)から、c2wの状態を逆算して返す"""
         rot_mat_w2c = self.renderer.camera_params["rot_mat_batch"][index]
         t_vec_w2c = self.renderer.camera_params["t_vec_batch"][index]
-
         c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
         c2w_position = -c2w_rotation.apply(t_vec_w2c)
         return c2w_position, c2w_rotation
@@ -157,7 +174,6 @@ class Viewer:
                     self.current_cam_index - 1 + self.num_cameras
                 ) % self.num_cameras
 
-            # カメラをリセット
             pos, rot = self.get_colmap_camera_state(self.current_cam_index)
             self.camera.position = pos
             self.camera.rotation = rot
@@ -188,11 +204,9 @@ class Viewer:
         if self.left_mouse_dragging:
             self.camera.rotate(dx, dy, self.mouse_sensitivity_orbit)
             self.camera_dirty = True
-
         if self.right_mouse_dragging:
             self.camera.pan(dx, dy, self.mouse_sensitivity_pan)
             self.camera_dirty = True
-
         self.last_mouse_pos = (xpos, ypos)
 
     def scroll_callback(self, window, xoffset, yoffset):
@@ -200,10 +214,8 @@ class Viewer:
         self.camera_dirty = True
 
     def run(self):
-        """メインループ"""
         while not glfw.window_should_close(self.window):
             glfw.poll_events()
-
             if self.camera_dirty:
                 rot_mat, t_vec = self.camera.get_view_matrix()
                 intrinsic_vec = self.renderer.camera_params["intrinsic_batch"][
@@ -215,27 +227,21 @@ class Viewer:
                 self.image_texture.write(image_data.astype("f4").tobytes())
                 self.camera_dirty = False
 
+            # クリア処理はビューポート設定後に行う
             self.ctx.clear(0.0, 0.0, 0.0)
             self.image_texture.use(location=0)
             self.program["u_texture"].value = 0
             self.quad_vao.render(moderngl.TRIANGLE_STRIP)
 
             glfw.swap_buffers(self.window)
-
         glfw.terminate()
 
 
 if __name__ == "__main__":
     PKL_FILE_PATH = "reconstructed.pkl"
-    try:
-        with open(PKL_FILE_PATH, "rb") as f:
-            reconstruction = pickle.load(f)
-        h, w = reconstruction["consts"]["img_shape"]
-    except Exception:
-        print(
-            f"警告: '{PKL_FILE_PATH}' からウィンドウサイズを読み込めませんでした。デフォルト値を使用します。"
-        )
-        w, h = 980, 545
+    with open(PKL_FILE_PATH, "rb") as f:
+        reconstruction = pickle.load(f)
+    h, w = reconstruction["consts"]["img_shape"]
 
     viewer = Viewer(window_size=(w, h), pkl_path=PKL_FILE_PATH)
     viewer.run()
