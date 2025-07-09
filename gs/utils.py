@@ -155,14 +155,14 @@ def _init_consts(
         "img_shape": np.array([height, width]),
         "max_points": max_points,
         "extent": extent,
-        "eps_prune_alpha": 0.05,
+        "eps_prune_alpha": 0.005,
         "tau_pos": 1e-7,
         "scale_threshold": 1.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
-        "densify_from_iter": 500,
+        "densify_from_iter": 1500,
         "densify_until_iter": 15000,
-        "densification_interval": 500,
+        "densification_interval": 1500,
     }
 
 
@@ -195,9 +195,12 @@ def build_params(
     }
 
     height, width = image_batch.shape[1:3]
-    extent = jnp.linalg.norm(
-        camera_params["t_vec_batch"] - camera_params["t_vec_batch"].mean(axis=0), axis=1
-    ).max()
+    extent = (
+        jnp.linalg.norm(
+            camera_params["t_vec_batch"] - camera_params["t_vec_batch"].mean(axis=0), axis=1
+        ).max()
+        * 1.1
+    )
     consts = _init_consts(height, width, max_points, extent)
 
     print("===== Data Information =====")
