@@ -18,8 +18,9 @@ def load_colmap_data(
     colors = (
         np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32) / 255.0
     )
+    print(reconstruction.images[200].cam_from_world())
     t_vec_batch = np.stack(
-        [img.cam_from_world.translation for img in reconstruction.images.values()],
+        [img.cam_from_world().translation for img in reconstruction.images.values()],
         dtype=np.float32,
     )
 
@@ -42,7 +43,7 @@ def load_colmap_data(
 
     if quatanion:
         quat_batch = np.stack(
-            [img.cam_from_world.rotation.quat for img in reconstruction.images.values()],
+            [img.cam_from_world().rotation.quat for img in reconstruction.images.values()],
             dtype=np.float32,
         )
         camera_params = {
@@ -52,7 +53,7 @@ def load_colmap_data(
         }
     else:
         rot_mat_batch = np.stack(
-            [img.cam_from_world.rotation.matrix() for img in reconstruction.images.values()],
+            [img.cam_from_world().rotation.matrix() for img in reconstruction.images.values()],
             dtype=np.float32,
         )
         camera_params = {
