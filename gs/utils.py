@@ -99,6 +99,7 @@ class ImageViewDataLoader:
                 strict=True,
             )
         ]
+        self.camera_params = camera_params
         self.data = list(zip(view_list, image_batch, strict=True))
         self.shuffle = shuffle
         self.num_epochs = n_epochs
