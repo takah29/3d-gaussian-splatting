@@ -18,7 +18,6 @@ def load_colmap_data(
     colors = (
         np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32) / 255.0
     )
-    print(reconstruction.images[200].cam_from_world())
     t_vec_batch = np.stack(
         [img.cam_from_world().translation for img in reconstruction.images.values()],
         dtype=np.float32,

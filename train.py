@@ -67,18 +67,26 @@ def main() -> None:
     parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
     parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
-    parser.add_argument("-s", "--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
+    parser.add_argument("-c", "--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
     args = parser.parse_args()
 
     params, consts, image_dataloader = build_params(
         args.colmap_data_path, args.max_points, args.image_scale, args.n_epochs
     )
 
+    # パラメータの保存先
+    save_dirpath = Path(__file__).parent / "output"
+    save_dirpath.mkdir(parents=True, exist_ok=True)
+
+    # 初期パラメータの保存
+    save_params_pkl(
+        save_dirpath / f"params_checkpoint_iter{0:05d}.pkl",
+        *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
+    )
+
     optimizer = get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader))
     opt_state = optimizer.init(params)
 
-    save_dirpath = Path(__file__).parent / "output"
-    save_dirpath.mkdir(parents=True, exist_ok=True)
     # logger = DataLogger(save_dirpath / "progress")
 
     update = make_updater(consts, optimizer, jit=True)
