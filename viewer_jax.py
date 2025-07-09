@@ -79,10 +79,8 @@ class Viewer:
 
         self.pkl_files = pkl_files
         self.current_data_index = initial_index
-        # キャッシュにはparamsのみを保存
         self.params_cache = {initial_index: initial_data["params"]}
 
-        # --- 初回ロード時に不変のパラメータを設定 ---
         params = initial_data["params"]
         self.camera_params = initial_data["camera_params"]
         self.consts = initial_data["consts"]
@@ -90,7 +88,6 @@ class Viewer:
         self.render_width, self.render_height = self.consts["img_shape"][::-1]
         self.render_aspect_ratio = self.render_width / self.render_height
 
-        # --- ウィンドウとOpenGLコンテキストの初期化 ---
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
@@ -102,16 +99,15 @@ class Viewer:
             sys.exit("FATAL ERROR: glfwウィンドウの作成に失敗しました。")
         glfw.make_context_current(self.window)
         glfw.swap_interval(1)
-        self.ctx = moderngl.create_context(require=330)
+        self.update_window_title()
 
-        # --- イベントコールバックの設定 ---
+        self.ctx = moderngl.create_context(require=330)
         glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
         glfw.set_key_callback(self.window, self.key_event)
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
         glfw.set_scroll_callback(self.window, self.scroll_callback)
 
-        # --- レンダラとカメラの初期化 ---
         self.renderer = GaussianRenderer(params, self.camera_params, self.consts)
         self.num_cameras = len(self.camera_params["t_vec_batch"])
         self.current_cam_index = 0
@@ -119,7 +115,6 @@ class Viewer:
         initial_pos, initial_rot = self.get_colmap_camera_state(self.current_cam_index)
         self.camera = Camera(initial_pos, initial_rot)
 
-        # --- マウスと描画状態の初期化 ---
         self.left_mouse_dragging = False
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
@@ -128,7 +123,6 @@ class Viewer:
         self.mouse_sensitivity_zoom = 0.1
         self.camera_dirty = True
 
-        # --- OpenGL描画オブジェクトの初期化 ---
         self.image_texture = self.ctx.texture(
             (self.render_width, self.render_height), 3, dtype="f4"
         )
@@ -146,15 +140,21 @@ class Viewer:
 
         self.framebuffer_size_callback(self.window, self.render_width, self.render_height)
 
+    def update_window_title(self):
+        """現在のファイル名と位置情報でウィンドウタイトルを更新する。高速な処理。"""
+        filename = self.pkl_files[self.current_data_index].name
+        k = self.current_data_index + 1
+        n = len(self.pkl_files)
+        title = f"3D Gaussian Splatting Viewer ({filename} {k}/{n})"
+        glfw.set_window_title(self.window, title)
+
     def load_data(self, index):
         """指定されたインデックスのparamsをロードし、レンダラを更新する"""
         if index == self.current_data_index:
             return
 
-        # --- キャッシュからparamsを取得、なければディスクからロード ---
         if index in self.params_cache:
             params = self.params_cache[index]
-            print(f"Loading from cache: {self.pkl_files[index].name}")
         else:
             filepath = self.pkl_files[index]
             print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
@@ -162,16 +162,17 @@ class Viewer:
                 with filepath.open("rb") as f:
                     reconstruction = pickle.load(f)
                 params = reconstruction["params"]
-                self.params_cache[index] = params  # paramsのみをキャッシュに保存
+                self.params_cache[index] = params
                 print(" Done.")
             except Exception as e:
                 print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
                 return
 
-        # --- paramsをレンダラにセット ---
         self.renderer.params = params
         self.current_data_index = index
         self.camera_dirty = True
+
+        self.update_window_title()
         print(
             f"Switched to: {self.pkl_files[self.current_data_index].name} ({self.current_data_index + 1}/{len(self.pkl_files)})"
         )
