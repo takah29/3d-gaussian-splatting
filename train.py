@@ -80,7 +80,7 @@ def main() -> None:
 
     # 初期パラメータの保存
     save_params_pkl(
-        save_dirpath / f"params_checkpoint_iter{0:05d}.pkl",
+        save_dirpath / "params_checkpoint_initial.pkl",
         *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
     )
 
