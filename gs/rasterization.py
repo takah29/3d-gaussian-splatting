@@ -21,16 +21,6 @@ def analytical_max_eigenvalue(mat2x2: jax.Array) -> jax.Array:
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-def _inv_strict(mat2x2: jax.Array) -> jax.Array:
-    a = mat2x2[0, 0]
-    b = mat2x2[0, 1]
-    d = mat2x2[1, 1]
-    inv_det = 1.0 / (a * d - b * b)
-
-    return inv_det * jnp.array([[d, -b], [-b, a]])
-
-
-@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
 def _gaussian_weight(
     pixel_coord: jax.Array,
     mean_2d: jax.Array,
@@ -41,14 +31,14 @@ def _gaussian_weight(
     b = cov_2d[0, 1]
     d = cov_2d[1, 1]
 
-    inv_det = 1.0 / (a * d - b * b)
+    inv_det = 1.0 / (a * d - b * b + 1e-8)
 
     dx = pixel_coord[0] - mean_2d[0]
     dy = pixel_coord[1] - mean_2d[1]
 
-    mahal_dist = (d * dx * dx - 2 * b * dx * dy + a * dy * dy) * inv_det
+    mahal_dist = jnp.maximum(0.0, (d * dx * dx - 2 * b * dx * dy + a * dy * dy) * inv_det)
 
-    return jnp.exp(-0.5 * mahal_dist) * opacity
+    return jnp.minimum(0.99, jnp.exp(-0.5 * mahal_dist) * opacity)
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
@@ -78,14 +68,13 @@ def _render_pixel(
         gaussian_idx, gaussian_weight, color = inputs
 
         @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-        def true_fun(pixel_color: jax.Array, tau: jax.Array) -> tuple[jax.Array, jax.Array]:
+        def true_fun(pixel_color, tau):
             updated_pixel_color = pixel_color + color * gaussian_weight * tau
-            updated_tau = tau * (1 - gaussian_weight)
-
+            updated_tau = tau * (1.0 - gaussian_weight)
             return updated_pixel_color, updated_tau
 
         updated_pixel_color, updated_tau = jax.lax.cond(
-            gaussian_idx >= 0,
+            (gaussian_idx >= 0) & (gaussian_weight[0] > 1.0 / 255.0) & (tau[0] > 1e-3),
             true_fun,
             lambda pixel_color, tau: (pixel_color, tau),
             pixel_color,

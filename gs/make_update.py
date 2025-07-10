@@ -31,7 +31,7 @@ def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
         "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
         "scales": jnp.exp(params["scales"]),
         "colors": jax.nn.sigmoid(params["colors"]),
-        "opacities": jnp.minimum(jax.nn.sigmoid(params["opacities"]), 0.99),
+        "opacities": jax.nn.sigmoid(params["opacities"]),
     }
 
 
