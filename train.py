@@ -2,7 +2,6 @@ import argparse
 import pickle
 from pathlib import Path
 
-import jax
 import numpy as np
 import optax
 
@@ -41,20 +40,20 @@ def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     return optimizer
 
 
+def to_numpy_dict(arr_dict):
+    return {key: np.array(val) for key, val in arr_dict.items()}
+
+
 def save_params_pkl(save_pkl_path: Path, params, camera_params, consts):
     result = {
         "params": get_corrected_params(params),
         "consts": consts,
         "camera_params": camera_params,
     }
-    result = jax.tree.map(lambda x: np.array(x), result)
+    result = {key: to_numpy_dict(val) for key, val in result.items()}
 
     with save_pkl_path.open("wb") as f:
         pickle.dump(result, f)
-
-
-def to_numpy_dict(arr_dict):
-    return {key: np.array(val) for key, val in arr_dict.items()}
 
 
 def main() -> None:
@@ -81,7 +80,7 @@ def main() -> None:
     # 初期パラメータの保存
     save_params_pkl(
         save_dirpath / "params_checkpoint_initial.pkl",
-        *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
+        *(params, image_dataloader.camera_params, consts),
     )
 
     optimizer = get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader))
@@ -101,7 +100,7 @@ def main() -> None:
         if i % args.checkpoint_cycle == 0:
             save_params_pkl(
                 save_dirpath / f"params_checkpoint_iter{i:05d}.pkl",
-                *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
+                *(params, image_dataloader.camera_params, consts),
             )
 
         if i <= consts["densify_until_iter"]:
@@ -154,7 +153,7 @@ def main() -> None:
 
     save_params_pkl(
         save_dirpath / "params_final.pkl",
-        *(to_numpy_dict(x) for x in (params, image_dataloader.camera_params, consts)),
+        *(params, image_dataloader.camera_params, consts),
     )
 
 
