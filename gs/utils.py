@@ -140,7 +140,7 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     nearest_distances = _compute_nearest_distances(points_3d) ** 2
     scales = np.log(np.clip(nearest_distances, 0.01, 3.0))[:, np.newaxis].repeat(3, axis=1)
 
-    # 回転なし
+    # 回転なし、(x, y, z, w)形式
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
 
     opacities = np.full((num_points, 1), logit(0.8))
