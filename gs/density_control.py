@@ -7,9 +7,14 @@ from gs.projection import compute_cov_vmap
 
 
 def prune_gaussians(params, consts):
-    alpha_prune_indices = (expit(params["opacities"]) < consts["eps_prune_alpha"]).ravel()
-    scale_prune_indices = np.exp(params["scales"].max(axis=1)) > consts["extent"] * 0.1
-    prune_indices = alpha_prune_indices | scale_prune_indices
+    prune_indices = (expit(params["opacities"]) < consts["eps_prune_alpha"]).ravel()
+
+    # 空などを表現する巨大なガウシアンが必要ない場合に有効
+    if consts["pruning_big_gaussian"]:
+        print("pruning big gaussians...")
+        scale_prune_indices = np.exp(params["scales"].max(axis=1)) > consts["extent"] * 0.1
+        prune_indices = prune_indices | scale_prune_indices
+
     pruned_params = {key: val[~prune_indices] for key, val in params.items()}
     return pruned_params, prune_indices.sum()
 

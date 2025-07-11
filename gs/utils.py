@@ -160,6 +160,7 @@ def _init_consts(
         "img_shape": np.array([height, width]),
         "max_points": max_points,
         "extent": extent,
+        "pruning_big_gaussian": False,
         "eps_prune_alpha": 0.005,
         "tau_pos": 1e-6,
         "scale_threshold": 1.0,
