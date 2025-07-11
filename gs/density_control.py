@@ -39,7 +39,10 @@ def densify_gaussians(params, view_space_grads_mean_norm, consts):
         tau_pos *= 2.0
 
     clone_params, cloned_num = clone_gaussians(target_params, clone_indices)
-    covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
+    covs_3d = compute_cov_vmap(
+        target_params["quats"] / np.linalg.norm(target_params["quats"], axis=-1, keepdims=True),
+        np.exp(target_params["scales"]),
+    )
     split_params, splited_num = split_gaussians(
         target_params, covs_3d, split_indices, consts, split_num
     )
