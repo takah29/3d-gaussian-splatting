@@ -18,13 +18,10 @@ def load_colmap_data(
     colors = (
         np.vstack([pt.color for pt in reconstruction.points3D.values()], dtype=np.float32) / 255.0
     )
-    t_vec_batch = np.stack(
-        [img.cam_from_world().translation for img in reconstruction.images.values()],
-        dtype=np.float32,
-    )
 
     intrinsic_list = []
     image_list = []
+    image_filenames = []
     for img in reconstruction.images.values():
         image_arr = _load_image_and_fit(colmap_data_path / "images" / img.name, image_scale)
         height, width = image_arr.shape[:2]
@@ -34,17 +31,24 @@ def load_colmap_data(
             [width_scale, height_scale, width_scale, height_scale]
         )
 
-        image_list.append(image_arr)
         intrinsic_list.append(intrinsic_vec)
+        image_list.append(image_arr)
+        image_filenames.append(img.name)
 
-    image_batch = np.stack(image_list, axis=0)
-    intrinsic_batch = np.stack(intrinsic_list, axis=0)
+    filename_sort_indices = np.argsort(image_filenames)
+    image_batch = np.stack(image_list, axis=0)[filename_sort_indices]
+    intrinsic_batch = np.stack(intrinsic_list, axis=0)[filename_sort_indices]
+
+    t_vec_batch = np.stack(
+        [img.cam_from_world().translation for img in reconstruction.images.values()],
+        dtype=np.float32,
+    )[filename_sort_indices]
 
     if quatanion:
         quat_batch = np.stack(
             [img.cam_from_world().rotation.quat for img in reconstruction.images.values()],
             dtype=np.float32,
-        )
+        )[filename_sort_indices]
         camera_params = {
             "quat_batch": quat_batch,  # (qx, qy, qz, qw) in quat_batch
             "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
@@ -54,7 +58,7 @@ def load_colmap_data(
         rot_mat_batch = np.stack(
             [img.cam_from_world().rotation.matrix() for img in reconstruction.images.values()],
             dtype=np.float32,
-        )
+        )[filename_sort_indices]
         camera_params = {
             "rot_mat_batch": rot_mat_batch,  # 3x3 rotation_matrix in rot_mat_batch
             "t_vec_batch": t_vec_batch,  # (tx, ty, tz) in t_vec_batch
