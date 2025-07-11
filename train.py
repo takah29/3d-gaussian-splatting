@@ -117,7 +117,6 @@ def main() -> None:
 
             cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
-                grads_means_3d = np.array(grads["means3d"])
                 view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
                 update_count_arr = np.array(update_count_arr)
 
@@ -128,7 +127,7 @@ def main() -> None:
                 )
 
                 params, cloned_num, splitted_num = densify_gaussians(
-                    params, grads_means_3d, viewspace_grads_mean_norm, consts
+                    params, viewspace_grads_mean_norm, consts
                 )
 
             # alpha値が低いガウシアンの消去

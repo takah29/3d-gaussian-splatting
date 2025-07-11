@@ -19,7 +19,7 @@ def prune_gaussians(params, consts):
     return pruned_params, prune_indices.sum()
 
 
-def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts):
+def densify_gaussians(params, view_space_grads_mean_norm, consts):
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_points"] - params["means3d"].shape[0]
 
@@ -27,7 +27,6 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts):
         target_indices = view_space_grads_mean_norm > tau_pos
         target_params = {key: val[target_indices] for key, val in params.items()}
 
-        # view space covarianceの計算
         max_scales = np.exp(target_params["scales"].max(axis=1))
         clone_indices = max_scales < consts["scale_threshold"] * consts["extent"]
         split_indices = max_scales >= consts["scale_threshold"] * consts["extent"]
@@ -39,8 +38,7 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts):
             break
         tau_pos *= 2.0
 
-    target_pos_grads = pos_grads[target_indices]
-    clone_params, cloned_num = clone_gaussians(target_params, target_pos_grads, clone_indices)
+    clone_params, cloned_num = clone_gaussians(target_params, clone_indices)
     covs_3d = compute_cov_vmap(target_params["quats"], target_params["scales"])
     split_params, splited_num = split_gaussians(
         target_params, covs_3d, split_indices, consts, split_num
@@ -54,15 +52,11 @@ def densify_gaussians(params, pos_grads, view_space_grads_mean_norm, consts):
     return params, cloned_num, splited_num
 
 
-def clone_gaussians(params, pos_grads, clone_indices):
+def clone_gaussians(params, clone_indices):
     clone_params = {key: val[clone_indices] for key, val in params.items()}
 
-    # 公式実装では同じ位置でクローンしたあとに片方のガウシアンだけ勾配更新を適用してずらしているが、
-    # ここではすでに勾配更新適用済みなので、クローンしたあと片方のガウシアンだけ逆勾配でもとの位置に戻す
-    clone_params["means3d"] = clone_params["means3d"] - pos_grads[clone_indices]
-    merged_params = {
-        key: np.vstack((params[key][clone_indices], clone_params[key])) for key in params
-    }
+    # 以降で異なる勾配更新が起こり自然と分離するため同じパラメータのガウシアンを複製
+    merged_params = {key: np.vstack((val, val)) for key, val in clone_params.items()}
 
     return merged_params, clone_indices.sum()
 
