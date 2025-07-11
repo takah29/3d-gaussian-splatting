@@ -24,6 +24,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from gs.make_update import make_render
+from gs.utils import calc_tile_max_gs_num, print_info
 
 
 @dataclass
@@ -284,7 +285,7 @@ class Viewer:
                     self.current_cam_index
                 )
                 self.camera_dirty = True
-                print(f"Jump to Camera: {self.current_cam_index + 1}/{self.num_cameras}")
+                print(f"Jump to Camera: {self.current_cam_index + 1}/{self.num_cameras}", end="\r")
 
     def mouse_button_callback(self, window, button, action, mods):
         if action == glfw.PRESS:
@@ -348,6 +349,21 @@ def main():
             initial_data = pickle.load(f)
     except Exception as e:
         sys.exit(f"FATAL ERROR: Could not load initial file {initial_filepath.name}: {e}")
+
+    # タイルあたりのガウシアン数の設定（学習時から増加させる）
+    tile_max_gs_num_coeff = 28.0
+    consts = initial_data["consts"]
+    consts["tile_max_gs_num"] = calc_tile_max_gs_num(
+        consts["tile_size"],
+        consts["img_shape"][0],
+        consts["img_shape"][1],
+        consts["max_points"],
+        tile_max_gs_num_coeff,
+    )
+    initial_data["consts"] = consts
+
+    # カメラの初期位置を設定
+    print_info(initial_data["params"], initial_data["consts"])
 
     viewer = Viewer(pkl_files, initial_data, initial_index)
     viewer.run()

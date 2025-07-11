@@ -96,8 +96,9 @@ def rasterize_tile_data(
     upperleft_coord: jax.Array,
     gaussians: dict[str, jax.Array],
     background: jax.Array,
+    tile_size: int,
 ) -> jax.Array:
-    ii, jj = jnp.mgrid[0:TILE_SIZE, 0:TILE_SIZE]
+    ii, jj = jnp.mgrid[0:tile_size, 0:tile_size]
     pixel_coords = jnp.stack([upperleft_coord[0] + jj + 0.5, upperleft_coord[1] + ii + 0.5], axis=2)
 
     image_buffer = jax.vmap(
@@ -108,7 +109,8 @@ def rasterize_tile_data(
 
 
 rasterize_tile_data_vmap = jax.vmap(
-    jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None)), in_axes=(0, 0, None, None)
+    jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None)),
+    in_axes=(0, 0, None, None, None),
 )
 
 
@@ -144,7 +146,8 @@ def _create_tile_depth_decending_indices_batch(
     gaussians: dict[str, jax.Array],
     height_split_num: jax.Array | int,
     width_split_num: jax.Array | int,
-    index_size: int,
+    tile_size: int,
+    tile_max_gs_num: int,
 ) -> jax.Array:
     # ガウシアンの所属するタイルのインデックスを計算
     gauss_max_eigvals = jax.vmap(analytical_max_eigenvalue)(gaussians["covs_2d"])
@@ -160,14 +163,14 @@ def _create_tile_depth_decending_indices_batch(
         gaussians["depths"], gaussian_index_intervals, height_split_num, width_split_num
     )
     tile_inverse_depth_topk_batch, tile_depth_topk_indices_batch = jax.lax.top_k(
-        -tile_depth_maps, k=index_size
+        -tile_depth_maps, k=tile_max_gs_num
     )
 
     return jnp.where(tile_inverse_depth_topk_batch == -jnp.inf, -1, tile_depth_topk_indices_batch)
 
 
 def build_tile_data(
-    gaussians: dict[str, jax.Array], img_shape: jax.Array
+    gaussians: dict[str, jax.Array], img_shape: jax.Array, tile_size: int, tile_max_gs_num: int
 ) -> tuple[jax.Array, jax.Array]:
     height_split_num = (img_shape[0] + TILE_SIZE - 1) // TILE_SIZE
     width_split_num = (img_shape[1] + TILE_SIZE - 1) // TILE_SIZE
@@ -176,7 +179,8 @@ def build_tile_data(
         gaussians,
         height_split_num,
         width_split_num,
-        index_size=MAX_TILE_INDEX_SIZE,
+        tile_size=tile_size,
+        tile_max_gs_num=tile_max_gs_num,
     )
 
     # タイルごとの左上の座標値を計算
@@ -200,10 +204,12 @@ def rasterize(
     """
     img_shape = consts["img_shape"]
     background = consts["background"]
+    tile_size = consts["tile_size"]
+    tile_max_gs_num = consts["tile_max_gs_num"]
 
     # タイルごとに分割
     tile_depth_decending_indices_batch, tile_upperleft_coord_batch = build_tile_data(
-        gaussians, img_shape
+        gaussians, img_shape, tile_size, tile_max_gs_num
     )
 
     image_buffer_batch = rasterize_tile_data_vmap(
@@ -211,6 +217,7 @@ def rasterize(
         tile_upperleft_coord_batch,
         gaussians,
         background,
+        tile_size,
     )
 
     # タイルごとのバッファを結合

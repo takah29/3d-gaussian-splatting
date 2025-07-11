@@ -152,9 +152,15 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
+def calc_tile_max_gs_num(tile_size, height, width, max_points, tile_max_gs_num_coeff):
+    n_tiles = (height // tile_size) * (width // tile_size)
+    return int(tile_max_gs_num_coeff * max_points / n_tiles)
+
+
 def _init_consts(
-    height: int, width: int, max_points: int, extent: float
+    height: int, width: int, max_points: int, tile_max_gs_num_coeff: float, extent: float
 ) -> dict[str, int | float | npt.NDArray]:
+    tile_size = 16
     return {
         "background": np.array([0.0, 0.0, 0.0]),
         "img_shape": np.array([height, width]),
@@ -166,10 +172,25 @@ def _init_consts(
         "scale_threshold": 1.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
-        "densify_from_iter": 1500,
+        "densify_from_iter": 100,
         "densify_until_iter": 15000,
-        "densification_interval": 1500,
+        "densification_interval": 100,
+        "tile_size": tile_size,
+        "tile_max_gs_num": calc_tile_max_gs_num(
+            tile_size, height, width, max_points, tile_max_gs_num_coeff
+        ),
     }
+
+
+def print_info(params, consts):
+    print("===== Information =====")
+    print("----- params -----")
+    for k, v in params.items():
+        print(f"{k}: {v.shape}")
+    print("----- consts -----")
+    for k, v in consts.items():
+        print(f"{k}: {v}")
+    print("============================")
 
 
 def build_params(
@@ -207,11 +228,9 @@ def build_params(
         ).max()
         * 1.1
     )
-    consts = _init_consts(height, width, max_points, extent)
+    tile_max_gs_num_coeff = 7.0
+    consts = _init_consts(height, width, max_points, tile_max_gs_num_coeff, extent)
 
-    print("===== Data Information =====")
-    for k, v in params.items():
-        print(f"{k}: {v.shape}")
-    print("============================")
+    print_info(params, consts)
 
     return params, consts, image_dataloader
