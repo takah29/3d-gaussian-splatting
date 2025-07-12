@@ -42,7 +42,7 @@ class Camera:
 
     def pan(self, dx: float, dy: float, sensitivity: float):
         """現在の向きを基準に、相対的なパン操作を行う。JAX版の仕様に統一。"""
-        pan_vector = np.array([-dx, -dy, 0]) * sensitivity
+        pan_vector = np.array([-dx, dy, 0]) * sensitivity
         self.position += self.rotation.apply(pan_vector)
 
     def zoom(self, delta: float, sensitivity: float):
@@ -168,10 +168,10 @@ class Viewer:
     def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
         self.pkl_files = pkl_files
         self.current_data_index = initial_index
-        self.params_cache = {initial_index: initial_data["params"]}
+        self.params_cache = {initial_index: self.params_to_gl_data(initial_data["params"])}
         self.params = initial_data["params"]
 
-        self.camera_params = initial_data["camera_params"]
+        self.camera_params = self.camera_params_to_gl_data(initial_data["camera_params"])
         self.consts = initial_data["consts"]
         self.render_width, self.render_height = self.consts["img_shape"][::-1]
 
@@ -188,6 +188,22 @@ class Viewer:
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True
+
+    def params_to_gl_data(self, params):
+        """paramsをGLのデータ形式に変換する。"""
+        params["means3d"][:, 1:] *= -1
+        # params["quats"] =
+        return params
+
+    def camera_params_to_gl_data(self, camera_params):
+        axis_transform = np.diag((1, -1, -1))
+        camera_params["rot_mat_batch"] = (
+            np.diag((1, -1, -1)) @ camera_params["rot_mat_batch"] @ np.diag((1, -1, -1))
+        )
+        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] * np.array([1, -1, -1])
+        # params["intrinsic_vec_batch"] = params["intrinsic_vec_batch"] * np.diag(1, 1, -1, -1)
+
+        return camera_params
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
@@ -228,15 +244,10 @@ class Viewer:
         """パラメータからSSBOを作成または更新する。"""
         self.num_gaussians = params["means3d"].shape[0]
 
-        # 1. パラメータをシェーダに適した形式に変換
-        # --- 修正箇所 ---
-        # 球面調和関数の代わりに、直接格納された'colors'キーを使用
         if "colors" not in params:
             raise KeyError("The provided .pkl file does not contain the required 'colors' key.")
-        colors = params["colors"].astype("f4")
-        # --- 修正ここまで ---
 
-        # クォータニオンの順序を (w, x, y, z) からシェーダ用の (x, y, z, w) に変更
+        colors = params["colors"].astype("f4")
         quats_xyzw = params["quats"].astype("f4")
         scales = params["scales"].astype("f4")
         opacities = params["opacities"].astype("f4")
@@ -262,13 +273,11 @@ class Viewer:
             # ガウシアン数が異なる場合はバッファを再作成
             self._init_buffers(params)
         else:
-            # 同じサイズならデータを書き込むだけ (より効率的)
-            # --- 修正箇所 ---
             if "colors" not in params:
                 raise KeyError("The provided .pkl file does not contain the required 'colors' key.")
+
             colors = params["colors"].astype("f4")
-            # --- 修正ここまで ---
-            quats_xyzw = np.roll(params["quats"], -1, axis=1).astype("f4")
+            quats_xyzw = params["quats"].astype("f4")
             scales = params["scales"].astype("f4")
             opacities = params["opacities"].astype("f4")
 
