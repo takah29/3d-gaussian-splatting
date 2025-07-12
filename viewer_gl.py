@@ -21,7 +21,7 @@ class Camera:
 
     def get_view_matrix(self) -> np.ndarray:
         """現在の位置と回転からOpenGL互換のビュー行列(w2c)を計算する。"""
-        rot_mat = self.rotation.inv().as_matrix()
+        rot_mat = self.rotation.as_matrix().T
         t_vec = -rot_mat @ self.position
 
         view_matrix = np.identity(4, dtype="f4")
@@ -32,13 +32,13 @@ class Camera:
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """現在の回転に対して、相対的な視点回転を行う (オービット操作)。"""
         # Y軸周りの回転 (水平方向) はワールド座標のY軸を基準にする
-        rot_y = Rotation.from_rotvec(np.radians(-dx * sensitivity) * np.array([0, 1, 0]))
+        rot_y = Rotation.from_rotvec(np.radians(dx * sensitivity) * np.array([0, 1, 0]))
         # X軸周りの回転 (垂直方向) はカメラのローカルX軸を基準にする
         rot_x = Rotation.from_rotvec(
-            self.rotation.apply(np.radians(-dy * sensitivity) * np.array([1, 0, 0]))
+            self.rotation.apply(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
         )
         # より一般的なオービット操作の回転合成順序
-        self.rotation = rot_y * self.rotation * rot_x
+        self.rotation = rot_x * self.rotation * rot_y
 
     def pan(self, dx: float, dy: float, sensitivity: float):
         """現在の向きを基準に、相対的なパン操作を行う。JAX版の仕様に統一。"""
@@ -192,7 +192,12 @@ class Viewer:
     def params_to_gl_data(self, params):
         """paramsをGLのデータ形式に変換する。"""
         params["means3d"][:, 1:] *= -1
-        # params["quats"] =
+
+        nan_mask = np.isnan(params["quats"]).any(axis=1)
+        params["quats"][nan_mask] = np.array([0, 0, 0, 1])  # nanデータは無回転にする
+        params["quats"] = params["quats"] / np.linalg.norm(params["quats"], axis=1, keepdims=True)
+
+        params["quats"] *= np.array([1, -1, -1, 1])
         return params
 
     def camera_params_to_gl_data(self, camera_params):
@@ -201,7 +206,9 @@ class Viewer:
             np.diag((1, -1, -1)) @ camera_params["rot_mat_batch"] @ np.diag((1, -1, -1))
         )
         camera_params["t_vec_batch"] = camera_params["t_vec_batch"] * np.array([1, -1, -1])
-        # params["intrinsic_vec_batch"] = params["intrinsic_vec_batch"] * np.diag(1, 1, -1, -1)
+        camera_params["intrinsic_batch"] = camera_params["intrinsic_batch"] * np.array(
+            [1, 1, 1, -1]
+        )
 
         return camera_params
 
