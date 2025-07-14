@@ -58,18 +58,15 @@ class Viewer:
     VERTEX_SHADER = """
         #version 430 core
         layout(location = 0) in vec2 in_vert;
-
         // SSBO bindings
         layout (std430, binding = 0) buffer gaussian_data { float g_data[]; };
         layout (std430, binding = 1) buffer gaussian_order { int gi[]; };
-
         // Uniforms
         uniform mat4 view_matrix;
         uniform mat4 projection_matrix;
         uniform float focal_x;
         uniform float focal_y;
         uniform vec2 u_resolution;
-
         // Outputs to Fragment Shader
         out vec3 pass_color;
         out float pass_alpha;
@@ -77,28 +74,26 @@ class Viewer:
         out vec2 pass_coordxy;
 
         mat3 quat_to_rotmat(vec4 q) {
-            // q = (x, y, z, w) の形式を想定
             float x = q.x, y = q.y, z = q.z, w = q.w;
             return mat3(
-                1.0 - 2.0 * (y*y + z*z), 2.0 * (x*y - w*z), 2.0 * (x*z + w*y),
-                2.0 * (x*y + w*z), 1.0 - 2.0 * (x*x + z*z), 2.0 * (y*z - w*x),
-                2.0 * (x*z - w*y), 2.0 * (y*z + w*x), 1.0 - 2.0 * (x*x + y*y));
+                1.f - 2.f * (y * y + z * z), 2.f * (x * y + w * z), 2.f * (x * z - w * y),
+                2.f * (x * y - w * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z + w * x),
+                2.f * (x * z + w * y), 2.f * (y * z - w * x), 1.f - 2.f * (x * x + y * y)
+            );
         }
 
         void main() {
             int instance_idx = gi[gl_InstanceID];
-            // layout: pos(3), rot(4), scale(3), opacity(1), color(3) -> 14 floats
             int data_dim = 14;
             int offset = instance_idx * data_dim;
 
             vec3 pos_world = vec3(g_data[offset], g_data[offset+1], g_data[offset+2]);
-            vec4 rot_quat = vec4(g_data[offset+3], g_data[offset+4], g_data[offset+5], g_data[offset+6]); // (x,y,z,w)
+            vec4 rot_quat = vec4(g_data[offset+3], g_data[offset+4], g_data[offset+5], g_data[offset+6]);
             vec3 scale = vec3(g_data[offset+7], g_data[offset+8], g_data[offset+9]);
             pass_alpha = g_data[offset+10];
             pass_color = vec3(g_data[offset+11], g_data[offset+12], g_data[offset+13]);
 
             vec4 pos_view = view_matrix * vec4(pos_world, 1.0);
-            // Near plane culling
             if (pos_view.z >= -0.2) {
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
                 return;
@@ -111,12 +106,22 @@ class Viewer:
             mat3 W = mat3(view_matrix);
             mat3 cov3D_view = W * cov3D_world * transpose(W);
 
+            // クリッピング処理を追加
+            float tan_fovx = 2.0 * atan(u_resolution.x / (2.0 * focal_x));
+            float tan_fovy = 2.0 * atan(u_resolution.y / (2.0 * focal_y));
+            float limx = 1.3 * tan_fovx;
+            float limy = 1.3 * tan_fovy;
+
             float z = pos_view.z;
+            float x_clipped = clamp(pos_view.x / z, -limx, limx) * z;
+            float y_clipped = clamp(pos_view.y / z, -limy, limy) * z;
+
+            // 更新されたJacobian行列
             mat3 J = mat3(
-                focal_x / (-z), 0.0, -(focal_x * pos_view.x) / (z * z),
-                0.0, focal_y / (-z), -(focal_y * pos_view.y) / (z * z),
-                0.0, 0.0, 0.0
-            );
+                    focal_x / z, 0.0, 0.0,                    // 第1列
+                    0.0, focal_y / z, 0.0,                    // 第2列
+                    -focal_x * x_clipped / (z*z), -focal_y * y_clipped / (z*z), 0.0  // 第3列
+                );
 
             mat3 cov2D = J * cov3D_view * transpose(J);
             cov2D[0][0] += 0.3;
@@ -166,6 +171,7 @@ class Viewer:
     MOUSE_SENSITIVITY_ZOOM = 0.3
 
     def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
+        self.trans = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
         self.pkl_files = pkl_files
         self.current_data_index = initial_index
         self.params_cache = {initial_index: self.params_to_gl_data(initial_data["params"])}
@@ -191,26 +197,70 @@ class Viewer:
 
     def params_to_gl_data(self, params):
         """paramsをGLのデータ形式に変換する。"""
-        params["means3d"][:, 1:] *= -1
+        params["means3d"] = (self.trans @ params["means3d"].T).T
 
         nan_mask = np.isnan(params["quats"]).any(axis=1)
         params["quats"][nan_mask] = np.array([0, 0, 0, 1])  # nanデータは無回転にする
         params["quats"] = params["quats"] / np.linalg.norm(params["quats"], axis=1, keepdims=True)
 
-        params["quats"] *= np.array([1, -1, -1, 1])
+        params["quats"] = self.matrix_to_quaternion(
+            self.trans @ Rotation.from_quat(params["quats"]).as_matrix()
+        )
+
         return params
 
     def camera_params_to_gl_data(self, camera_params):
-        axis_transform = np.diag((1, -1, -1))
-        camera_params["rot_mat_batch"] = (
-            np.diag((1, -1, -1)) @ camera_params["rot_mat_batch"] @ np.diag((1, -1, -1))
-        )
-        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] * np.array([1, -1, -1])
+        camera_params["rot_mat_batch"] = self.trans @ camera_params["rot_mat_batch"] @ self.trans.T
+        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] @ self.trans.T
         camera_params["intrinsic_batch"] = camera_params["intrinsic_batch"] * np.array(
             [1, 1, 1, -1]
         )
 
         return camera_params
+
+    def matrix_to_quaternion(self, matrices):
+        m00, m01, m02 = matrices[:, 0, 0], matrices[:, 0, 1], matrices[:, 0, 2]
+        m10, m11, m12 = matrices[:, 1, 0], matrices[:, 1, 1], matrices[:, 1, 2]
+        m20, m21, m22 = matrices[:, 2, 0], matrices[:, 2, 1], matrices[:, 2, 2]
+        t = 1 + m00 + m11 + m22
+        s = np.ones_like(m00)
+        w = np.ones_like(m00)
+        x = np.ones_like(m00)
+        y = np.ones_like(m00)
+        z = np.ones_like(m00)
+
+        t_positive = t > 0.0000001
+        s[t_positive] = 0.5 / np.sqrt(t[t_positive])
+        w[t_positive] = 0.25 / s[t_positive]
+        x[t_positive] = (m21[t_positive] - m12[t_positive]) * s[t_positive]
+        y[t_positive] = (m02[t_positive] - m20[t_positive]) * s[t_positive]
+        z[t_positive] = (m10[t_positive] - m01[t_positive]) * s[t_positive]
+
+        c1 = np.logical_and(m00 > m11, m00 > m22)
+        cond1 = np.logical_and(np.logical_not(t_positive), np.logical_and(m00 > m11, m00 > m22))
+
+        s[cond1] = 2.0 * np.sqrt(1.0 + m00[cond1] - m11[cond1] - m22[cond1])
+        w[cond1] = (m21[cond1] - m12[cond1]) / s[cond1]
+        x[cond1] = 0.25 * s[cond1]
+        y[cond1] = (m01[cond1] + m10[cond1]) / s[cond1]
+        z[cond1] = (m02[cond1] + m20[cond1]) / s[cond1]
+
+        c2 = np.logical_and(np.logical_not(c1), m11 > m22)
+        cond2 = np.logical_and(np.logical_not(t_positive), c2)
+        s[cond2] = 2.0 * np.sqrt(1.0 + m11[cond2] - m00[cond2] - m22[cond2])
+        w[cond2] = (m02[cond2] - m20[cond2]) / s[cond2]
+        x[cond2] = (m01[cond2] + m10[cond2]) / s[cond2]
+        y[cond2] = 0.25 * s[cond2]
+        z[cond2] = (m12[cond2] + m21[cond2]) / s[cond2]
+
+        c3 = np.logical_and(np.logical_not(c1), np.logical_not(c2))
+        cond3 = np.logical_and(np.logical_not(t_positive), c3)
+        s[cond3] = 2.0 * np.sqrt(1.0 + m22[cond3] - m00[cond3] - m11[cond3])
+        w[cond3] = (m10[cond3] - m01[cond3]) / s[cond3]
+        x[cond3] = (m02[cond3] + m20[cond3]) / s[cond3]
+        y[cond3] = (m12[cond3] + m21[cond3]) / s[cond3]
+        z[cond3] = 0.25 * s[cond3]
+        return np.array([x, y, z, w]).T
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
@@ -243,6 +293,7 @@ class Viewer:
         self._init_buffers(self.params)
 
         quad_verts = np.array([[-1, -1], [1, -1], [-1, 1], [1, 1]], dtype="f4")
+        # quad_verts = np.array([[-1, 1], [1, 1], [-1, -1], [1, -1]], dtype="f4")
         vbo_quad = self.ctx.buffer(quad_verts)
         self.vao = self.ctx.vertex_array(self.program, [(vbo_quad, "2f", "in_vert")])
         self.framebuffer_size_callback(self.window, self.render_width, self.render_height)
