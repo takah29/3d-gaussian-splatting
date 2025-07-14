@@ -185,7 +185,16 @@ class Viewer:
 
         self.camera_params = self.camera_params_to_gl_data(initial_data["camera_params"])
         self.consts = initial_data["consts"]
-        self.render_width, self.render_height = self.consts["img_shape"][::-1]
+
+        # 初期パラメータを保存
+        self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
+        # 最初のカメラの内部パラメータを基準の初期値として保存
+        intrinsic_vec = self.camera_params["intrinsic_batch"][initial_index]
+        self.initial_fx, self.initial_fy, _, _ = intrinsic_vec
+
+        # 動的パラメータを初期化
+        self.render_width, self.render_height = self.initial_width, self.initial_height
+        self.current_fx, self.current_fy = self.initial_fx, self.initial_fy
 
         self._init_glfw()
         self._init_moderngl()
@@ -233,7 +242,7 @@ class Viewer:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            self.render_width, self.render_height, "OpenGL 3DGS Viewer", None, None
+            self.initial_width, self.initial_height, "OpenGL 3DGS Viewer", None, None
         )
         if not self.window:
             glfw.terminate()
@@ -256,10 +265,11 @@ class Viewer:
         self._init_buffers(self.params)
 
         quad_verts = np.array([[-1, -1], [1, -1], [-1, 1], [1, 1]], dtype="f4")
-        # quad_verts = np.array([[-1, 1], [1, 1], [-1, -1], [1, -1]], dtype="f4")
         vbo_quad = self.ctx.buffer(quad_verts)
         self.vao = self.ctx.vertex_array(self.program, [(vbo_quad, "2f", "in_vert")])
-        self.framebuffer_size_callback(self.window, self.render_width, self.render_height)
+
+        width, height = glfw.get_framebuffer_size(self.window)
+        self.framebuffer_size_callback(self.window, width, height)
 
     def _init_buffers(self, params: dict):
         """パラメータからSSBOを作成または更新する。"""
@@ -387,11 +397,9 @@ class Viewer:
                 # 1. ビュー行列の更新
                 view_matrix = self.camera.get_view_matrix()
 
-                # 2. プロジェクション行列の更新
-                intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
-                fx, fy, _, _ = intrinsic_vec
-                fovy = 2 * np.arctan(self.render_height / (2 * fy))
-                aspect = self.render_width / self.render_height
+                # 2. プロジェクション行列の更新 (FOVとアスペクト比を初期値で固定)
+                fovy = 2 * np.arctan(self.initial_height / (2 * self.initial_fy))
+                aspect = self.initial_width / self.initial_height
                 projection_matrix = pglm.perspective(fovy, aspect, 0.1, 1000.0)
 
                 # 3. ガウシアンのソート
@@ -400,8 +408,10 @@ class Viewer:
                 # 4. Uniform変数をシェーダに送信
                 self.program["view_matrix"].write(pglm.mat4(view_matrix))
                 self.program["projection_matrix"].write(projection_matrix)
-                self.program["focal_x"].value = fx
-                self.program["focal_y"].value = fy
+                # 解像度に合わせてスケールされたfx, fyを渡す
+                self.program["focal_x"].value = self.current_fx
+                self.program["focal_y"].value = self.current_fy
+                # 新しい描画解像度を渡す
                 self.program["u_resolution"].value = (self.render_width, self.render_height)
 
                 self.camera_dirty = False
@@ -416,9 +426,36 @@ class Viewer:
 
     # --- Event Callbacks (JAX版からほぼ流用) ---
     def framebuffer_size_callback(self, window, width, height):
-        if height == 0:
+        """ウィンドウリサイズ時に呼び出され、解像度、焦点距離、ビューポートを更新する。"""
+        if width == 0 or height == 0:
             return
-        self.ctx.viewport = (0, 0, width, height)
+
+        content_aspect = self.initial_width / self.initial_height
+        window_aspect = width / height
+
+        # ウィンドウを覆うように新しい描画解像度を計算（カバー）
+        if window_aspect > content_aspect:
+            # ウィンドウが横長 -> 幅基準でスケール
+            self.render_width = width
+            self.render_height = int(width / content_aspect)
+            view_x = 0
+            view_y = int((height - self.render_height) / 2)
+        else:
+            # ウィンドウが縦長 -> 高さ基準でスケール
+            self.render_height = height
+            self.render_width = int(height * content_aspect)
+            view_y = 0
+            view_x = int((width - self.render_width) / 2)
+
+        # 1. ビューポートを設定（クロップと中央配置）
+        self.ctx.viewport = (view_x, view_y, self.render_width, self.render_height)
+
+        # 2. 新しい解像度に合わせて焦点距離をスケーリング
+        scale = self.render_width / self.initial_width
+        self.current_fx = self.initial_fx * scale
+        self.current_fy = self.initial_fy * scale
+
+        # 3. 再描画をトリガー
         self.camera_dirty = True
 
     def key_event(self, window, key, scancode, action, mods):
@@ -441,6 +478,11 @@ class Viewer:
                 ) % self.num_cameras
                 cam_changed = True
             if cam_changed:
+                # カメラを切り替えたら、基準となるfx,fyもそのカメラのものに更新
+                new_intrinsics = self.camera_params["intrinsic_batch"][self.current_cam_index]
+                self.initial_fx, self.initial_fy, _, _ = new_intrinsics
+                # 現在のウィンドウサイズに合わせて各種パラメータを再計算
+                self.framebuffer_size_callback(self.window, *glfw.get_framebuffer_size(self.window))
                 self.camera.position, self.camera.rotation = self._get_colmap_camera_state(
                     self.current_cam_index
                 )
