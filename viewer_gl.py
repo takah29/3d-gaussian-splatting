@@ -13,41 +13,46 @@ from scipy.spatial.transform import Rotation
 
 
 class Camera:
-    """カメラの位置と回転を管理し、ビュー行列を計算するクラス。(JAX版から流用・一部修正)"""
+    """カメラの位置と回転を管理し、ビュー行列（world-to-camera）を計算するクラス。"""
 
     def __init__(self, position: np.ndarray, rotation: Rotation):
         self.position = position
         self.rotation = rotation
 
     def get_view_matrix(self) -> np.ndarray:
-        """現在の位置と回転からOpenGL互換のビュー行列(w2c)を計算する。"""
+        """現在の位置と回転からOpenGL互換の4x4ビュー行列(w2c)を計算する。"""
+        # カメラの回転の逆行列（転置）を計算
         rot_mat = self.rotation.as_matrix().T
+        # カメラの位置を逆変換
         t_vec = -rot_mat @ self.position
 
+        # 4x4のビュー行列を組み立てる
         view_matrix = np.identity(4, dtype="f4")
         view_matrix[:3, :3] = rot_mat
         view_matrix[:3, 3] = t_vec
         return view_matrix
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
-        """現在の回転に対して、相対的な視点回転を行う (オービット操作)。"""
-        # Y軸周りの回転 (水平方向) はワールド座標のY軸を基準にする
+        """現在の回転を基準に、マウスの動きに応じたオービット操作（視点回転）を行う。"""
+        # Y軸周りの回転（水平方向）はワールド座標のY軸を基準にする
         rot_y = Rotation.from_rotvec(np.radians(dx * sensitivity) * np.array([0, 1, 0]))
-        # X軸周りの回転 (垂直方向) はカメラのローカルX軸を基準にする
+        # X軸周りの回転（垂直方向）はカメラのローカルX軸を基準にする
         rot_x = Rotation.from_rotvec(
             self.rotation.apply(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
         )
-        # より一般的なオービット操作の回転合成順序
+        # 一般的なオービット操作の回転合成順序
         self.rotation = rot_x * self.rotation * rot_y
 
     def pan(self, dx: float, dy: float, sensitivity: float):
-        """現在の向きを基準に、相対的なパン操作を行う。JAX版の仕様に統一。"""
+        """現在の向きを基準に、マウスの動きに応じたパン操作（平行移動）を行う。"""
+        # マウスの動きからカメラのローカル座標系での移動ベクトルを計算
         pan_vector = np.array([-dx, dy, 0]) * sensitivity
         self.position += self.rotation.apply(pan_vector)
 
     def zoom(self, delta: float, sensitivity: float):
-        """現在の向きを基準に、相対的なズーム操作を行う。"""
-        # yoffsetは上下で値の符号が異なるため、-deltaで方向を統一
+        """現在の向きを基準に、マウスホイールに応じたズーム操作を行う。"""
+        # マウスホイールのスクロール量からカメラのローカルZ軸方向の移動ベクトルを計算
+        # yoffsetは上下で符号が異なるため、-deltaで方向を統一
         zoom_vector = np.array([0, 0, -delta]) * sensitivity
         self.position += self.rotation.apply(zoom_vector)
 
@@ -55,6 +60,7 @@ class Camera:
 class Viewer:
     """GLFWウィンドウ、ユーザー入力、OpenGLレンダリングループを管理するメインクラス。"""
 
+    # --- シェーダ定義 ---
     VERTEX_SHADER = """
         #version 430 core
         layout(location = 0) in vec2 in_vert;
@@ -75,8 +81,6 @@ class Viewer:
 
         mat3 quat_to_rotmat(vec4 q) {
             float x = q.x, y = q.y, z = q.z, w = q.w;
-
-            // GLSL defines directly in column-major order
             return mat3(
                 1.f - 2.f * (y * y + z * z), 2.f * (x * y + w * z), 2.f * (x * z - w * y),
                 2.f * (x * y - w * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z + w * x),
@@ -86,7 +90,7 @@ class Viewer:
 
         void main() {
             int instance_idx = gi[gl_InstanceID];
-            int data_dim = 14;
+            int data_dim = 14; // (pos:3, rot:4, scale:3, opacity:1, color:3)
             int offset = instance_idx * data_dim;
 
             vec3 pos_world = vec3(g_data[offset], g_data[offset+1], g_data[offset+2]);
@@ -96,8 +100,8 @@ class Viewer:
             pass_color = vec3(g_data[offset+11], g_data[offset+12], g_data[offset+13]);
 
             vec4 pos_view = view_matrix * vec4(pos_world, 1.0);
-            if (pos_view.z >= -0.2) {
-                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            if (pos_view.z >= -0.2) { // 近すぎるガウシアンは描画しない
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // 画面外に飛ばす
                 return;
             }
 
@@ -108,7 +112,6 @@ class Viewer:
             mat3 W = mat3(view_matrix);
             mat3 cov3D_view = W * cov3D_world * transpose(W);
 
-            // クリッピング処理を追加
             float tan_fovx = 2.0 * atan(u_resolution.x / (2.0 * focal_x));
             float tan_fovy = 2.0 * atan(u_resolution.y / (2.0 * focal_y));
             float limx = 1.3 * tan_fovx;
@@ -118,18 +121,17 @@ class Viewer:
             float x_clipped = clamp(pos_view.x / z, -limx, limx) * z;
             float y_clipped = clamp(pos_view.y / z, -limy, limy) * z;
 
-            // 更新されたJacobian行列
             mat3 J = mat3(
-                    focal_x / z, 0.0, 0.0,                    // 第1列
-                    0.0, focal_y / z, 0.0,                    // 第2列
-                    -focal_x * x_clipped / (z*z), -focal_y * y_clipped / (z*z), 0.0  // 第3列
-                );
+                focal_x / z, 0.0, 0.0,
+                0.0, focal_y / z, 0.0,
+                -focal_x * x_clipped / (z*z), -focal_y * y_clipped / (z*z), 0.0
+            );
 
             mat3 cov2D = J * cov3D_view * transpose(J);
             cov2D[0][0] += 0.3;
             cov2D[1][1] += 0.3;
 
-            float det = cov2D[0][0] * cov2D[1][1] - cov2D[0][1] * cov2D[1][0];
+            float det = determinant(mat2(cov2D));
             if (det == 0.0) {
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
                 return;
@@ -148,7 +150,6 @@ class Viewer:
             pass_coordxy = in_vert * radius;
         }
     """
-
     FRAGMENT_SHADER = """
         #version 430 core
         in vec3 pass_color;
@@ -168,70 +169,66 @@ class Viewer:
         }
     """
 
+    # --- マウス感度設定 ---
     MOUSE_SENSITIVITY_ORBIT = 0.2
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
 
     def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
-        # Transformation matrix from learning coordinate system to OpenGL coordinate system
-        # Right-handed coordinate system: x-axis pointing right, y-axis pointing down, z-axis pointing forward
-        # -> Right-handed coordinate system: x-axis pointing right, y-axis pointing up, z-axis pointing backward
+        # 学習時の座標系からOpenGLの座標系への変換行列を定義
+        # (右手系: X右, Y下, Z奥 -> 右手系: X右, Y上, Z手前)
         self.to_gl_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
 
         self.pkl_files = pkl_files
         self.current_data_index = initial_index
-        self.params_cache = {initial_index: self.params_to_gl_data(initial_data["params"])}
-        self.params = initial_data["params"]
 
+        # --- データの初期化と座標変換 ---
+        self.params = self.params_to_gl_data(initial_data["params"])
+        self.params_cache = {initial_index: self.params}
         self.camera_params = self.camera_params_to_gl_data(initial_data["camera_params"])
         self.consts = initial_data["consts"]
 
-        # 初期パラメータを保存
+        # --- パラメータの初期化 ---
         self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
-        # 最初のカメラの内部パラメータを基準の初期値として保存
-        intrinsic_vec = self.camera_params["intrinsic_batch"][initial_index]
+        intrinsic_vec = self.camera_params["intrinsic_batch"][0]
         self.initial_fx, self.initial_fy, _, _ = intrinsic_vec
-
-        # 動的パラメータを初期化
         self.render_width, self.render_height = self.initial_width, self.initial_height
         self.current_fx, self.current_fy = self.initial_fx, self.initial_fy
 
+        # --- 初期化処理の実行 ---
         self._init_glfw()
         self._init_moderngl()
-
         self.camera = self._create_initial_camera()
         self._setup_callbacks()
 
+        # --- 状態変数の初期化 ---
         self.means3d_jax = jnp.asarray(self.params["means3d"])
         self.sorter = jax.jit(self._get_sorted_indices_jax)
-
         self.left_mouse_dragging = False
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
-        self.camera_dirty = True
+        self.camera_dirty = True  # 再描画が必要かどうかのフラグ
 
-    def params_to_gl_data(self, params):
-        """paramsをGLのデータ形式に変換する。"""
+    def params_to_gl_data(self, params: dict) -> dict:
+        """学習済みパラメータをOpenGLの座標系とデータ形式に変換する。"""
         params["means3d"] = (self.to_gl_matrix @ params["means3d"].T).T
 
         nan_mask = np.isnan(params["quats"]).any(axis=1)
-        params["quats"][nan_mask] = np.array([0, 0, 0, 1])  # nanデータは無回転にする
-        params["quats"] = params["quats"] / np.linalg.norm(params["quats"], axis=1, keepdims=True)
+        params["quats"][nan_mask] = np.array([0, 0, 0, 1])
+        params["quats"] /= np.linalg.norm(params["quats"], axis=1, keepdims=True)
 
-        transformed_matrix = self.to_gl_matrix @ Rotation.from_quat(params["quats"]).as_matrix()
-        params["quats"] = Rotation.from_matrix(transformed_matrix).as_quat()
-
+        rot_matrices = Rotation.from_quat(params["quats"]).as_matrix()
+        transformed_matrices = self.to_gl_matrix @ rot_matrices
+        params["quats"] = Rotation.from_matrix(transformed_matrices).as_quat()
         return params
 
-    def camera_params_to_gl_data(self, camera_params):
+    def camera_params_to_gl_data(self, camera_params: dict) -> dict:
+        """カメラパラメータをOpenGLの座標系に変換する。"""
         camera_params["rot_mat_batch"] = (
             self.to_gl_matrix @ camera_params["rot_mat_batch"] @ self.to_gl_matrix.T
         )
         camera_params["t_vec_batch"] = camera_params["t_vec_batch"] @ self.to_gl_matrix
-        camera_params["intrinsic_batch"] = camera_params["intrinsic_batch"] * np.array(
-            [1, 1, 1, -1]
-        )
-
+        camera_params["intrinsic_batch"] *= np.array([1, 1, 1, -1])
         return camera_params
 
     def _init_glfw(self):
@@ -258,12 +255,14 @@ class Viewer:
             vertex_shader=self.VERTEX_SHADER, fragment_shader=self.FRAGMENT_SHADER
         )
 
+        # ブレンディング設定
         self.ctx.enable(moderngl.BLEND)
         self.ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
         self.ctx.disable(moderngl.DEPTH_TEST)
 
         self._init_buffers(self.params)
 
+        # 描画対象の四角形（スプライト）の頂点バッファ
         quad_verts = np.array([[-1, -1], [1, -1], [-1, 1], [1, 1]], dtype="f4")
         vbo_quad = self.ctx.buffer(quad_verts)
         self.vao = self.ctx.vertex_array(self.program, [(vbo_quad, "2f", "in_vert")])
@@ -272,48 +271,48 @@ class Viewer:
         self.framebuffer_size_callback(self.window, width, height)
 
     def _init_buffers(self, params: dict):
-        """パラメータからSSBOを作成または更新する。"""
+        """パラメータからSSBO(Shader Storage Buffer Object)を作成または更新する。"""
         self.num_gaussians = params["means3d"].shape[0]
-
         if "colors" not in params:
             raise KeyError("The provided .pkl file does not contain the required 'colors' key.")
 
-        colors = params["colors"].astype("f4")
-        quats_xyzw = params["quats"].astype("f4")
-        scales = params["scales"].astype("f4")
-        opacities = params["opacities"].astype("f4")
-
-        # データを一つの配列にまとめる
+        # シェーダに渡すデータを一つの配列にまとめる
         flat_data = np.concatenate(
-            [params["means3d"].astype("f4"), quats_xyzw, scales, opacities, colors], axis=1
+            [
+                params["means3d"].astype("f4"),
+                params["quats"].astype("f4"),
+                params["scales"].astype("f4"),
+                params["opacities"].astype("f4"),
+                params["colors"].astype("f4"),
+            ],
+            axis=1,
         ).ravel()
 
-        # 2. SSBOを作成・書き込み
         self.ssbo_gaussians = self.ctx.buffer(flat_data.tobytes())
         initial_indices = np.arange(self.num_gaussians, dtype="i4")
         self.ssbo_indices = self.ctx.buffer(initial_indices.tobytes(), dynamic=True)
 
-        # 3. SSBOをシェーダにバインド
         self.ssbo_gaussians.bind_to_storage_buffer(0)
         self.ssbo_indices.bind_to_storage_buffer(1)
 
     def _update_buffers(self, params: dict):
-        """既存のバッファを新しいパラメータで更新する。ガウシアン数が変わる場合は再生成。"""
+        """既存のバッファを新しいパラメータで更新する。"""
         new_num_gaussians = params["means3d"].shape[0]
         if new_num_gaussians != self.num_gaussians:
-            # ガウシアン数が異なる場合はバッファを再作成
-            self._init_buffers(params)
+            self._init_buffers(params)  # ガウシアン数が変わる場合はバッファを再生成
         else:
             if "colors" not in params:
                 raise KeyError("The provided .pkl file does not contain the required 'colors' key.")
 
-            colors = params["colors"].astype("f4")
-            quats_xyzw = params["quats"].astype("f4")
-            scales = params["scales"].astype("f4")
-            opacities = params["opacities"].astype("f4")
-
             flat_data = np.concatenate(
-                [params["means3d"].astype("f4"), quats_xyzw, scales, opacities, colors], axis=1
+                [
+                    params["means3d"].astype("f4"),
+                    params["quats"].astype("f4"),
+                    params["scales"].astype("f4"),
+                    params["opacities"].astype("f4"),
+                    params["colors"].astype("f4"),
+                ],
+                axis=1,
             ).ravel()
             self.ssbo_gaussians.write(flat_data.tobytes())
 
@@ -321,14 +320,14 @@ class Viewer:
 
     @staticmethod
     def _get_sorted_indices_jax(means3d_jax, view_matrix_jax):
-        """JAXを使って深度ソートを行う。"""
+        """JAXを使用して、カメラ視点からの深度に基づいてガウシアンをソートする。"""
         means_homo = jnp.hstack([means3d_jax, jnp.ones((means3d_jax.shape[0], 1))])
         means_view = means_homo @ view_matrix_jax.T
         depths = means_view[:, 2]
         return jnp.argsort(depths)
 
     def _sort_gaussians(self, view_matrix: np.ndarray):
-        """カメラのビュー行列に基づいてガウシアンをソートし、インデックスバッファを更新する。"""
+        """ガウシアンをソートし、インデックスバッファを更新する。"""
         sorted_indices_jax = self.sorter(self.means3d_jax, jnp.array(view_matrix))
         self.ssbo_indices.write(np.asarray(sorted_indices_jax).astype("i4").tobytes())
 
@@ -344,19 +343,20 @@ class Viewer:
         """最初の学習済みカメラ視点からCameraオブジェクトを生成する。"""
         self.num_cameras = len(self.camera_params["t_vec_batch"])
         self.current_cam_index = 0
-        pos, rot = self._get_colmap_camera_state(self.current_cam_index)
+        pos, rot = self._get_camera_state(self.current_cam_index)
         return Camera(position=pos, rotation=rot)
 
-    def _get_colmap_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
-        """指定インデックスの学習済みカメラ情報を取得する。"""
+    def _get_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
+        """指定インデックスの学習済みカメラ情報を取得し、位置と回転を返す。"""
         rot_mat_w2c = self.camera_params["rot_mat_batch"][index]
         t_vec_w2c = self.camera_params["t_vec_batch"][index]
+        # w2cからc2w(カメラからワールド)への変換
         c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
         c2w_position = -c2w_rotation.apply(t_vec_w2c)
         return c2w_position, c2w_rotation
 
     def load_params(self, index: int):
-        """指定インデックスのparamsをロードし、レンダラを更新する。"""
+        """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
         if index == self.current_data_index:
             return
 
@@ -367,8 +367,8 @@ class Viewer:
             print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
             try:
                 with filepath.open("rb") as f:
-                    reconstruction = pickle.load(f)
-                params = reconstruction["params"]
+                    data = pickle.load(f)
+                params = self.params_to_gl_data(data["params"])
                 self.params_cache[index] = params
                 print(" Done.")
             except Exception as e:
@@ -394,60 +394,52 @@ class Viewer:
             glfw.poll_events()
 
             if self.camera_dirty:
-                # 1. ビュー行列の更新
+                # 1. ビュー行列とプロジェクション行列の更新
                 view_matrix = self.camera.get_view_matrix()
-
-                # 2. プロジェクション行列の更新 (FOVとアスペクト比を初期値で固定)
                 fovy = 2 * np.arctan(self.initial_height / (2 * self.initial_fy))
                 aspect = self.initial_width / self.initial_height
                 projection_matrix = pglm.perspective(fovy, aspect, 0.1, 1000.0)
 
-                # 3. ガウシアンのソート
+                # 2. ガウシアンのソート
                 self._sort_gaussians(view_matrix)
 
-                # 4. Uniform変数をシェーダに送信
+                # 3. Uniform変数をシェーダに送信
                 self.program["view_matrix"].write(pglm.mat4(view_matrix))
                 self.program["projection_matrix"].write(projection_matrix)
-                # 解像度に合わせてスケールされたfx, fyを渡す
                 self.program["focal_x"].value = self.current_fx
                 self.program["focal_y"].value = self.current_fy
-                # 新しい描画解像度を渡す
                 self.program["u_resolution"].value = (self.render_width, self.render_height)
 
                 self.camera_dirty = False
 
-            # 描画
-            self.ctx.clear(0.0, 0.0, 0.0)
+            # 描画処理
+            self.ctx.clear(0.0, 0.0, 0.0, 0.0)
             if self.num_gaussians > 0:
                 self.vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=self.num_gaussians)
 
             glfw.swap_buffers(self.window)
         glfw.terminate()
 
-    # --- Event Callbacks (JAX版からほぼ流用) ---
+    # --- Event Callbacks ---
     def framebuffer_size_callback(self, window, width, height):
-        """ウィンドウリサイズ時に呼び出され、解像度、焦点距離、ビューポートを更新する。"""
+        """ウィンドウリサイズ時に呼び出され、ビューポートと解像度関連の値を更新する。"""
         if width == 0 or height == 0:
             return
 
         content_aspect = self.initial_width / self.initial_height
         window_aspect = width / height
 
-        # ウィンドウを覆うように新しい描画解像度を計算（カバー）
-        if window_aspect > content_aspect:
-            # ウィンドウが横長 -> 幅基準でスケール
+        # 元の画像の縦横比を保ちつつ、ウィンドウを覆うように描画領域を計算（カバー）
+        if window_aspect > content_aspect:  # ウィンドウが横長
             self.render_width = width
             self.render_height = int(width / content_aspect)
-            view_x = 0
-            view_y = int((height - self.render_height) / 2)
-        else:
-            # ウィンドウが縦長 -> 高さ基準でスケール
+            view_x, view_y = 0, (height - self.render_height) // 2
+        else:  # ウィンドウが縦長または同じ
             self.render_height = height
             self.render_width = int(height * content_aspect)
-            view_y = 0
-            view_x = int((width - self.render_width) / 2)
+            view_x, view_y = (width - self.render_width) // 2, 0
 
-        # 1. ビューポートを設定（クロップと中央配置）
+        # 1. ビューポートを更新し、中央に配置
         self.ctx.viewport = (view_x, view_y, self.render_width, self.render_height)
 
         # 2. 新しい解像度に合わせて焦点距離をスケーリング
@@ -455,10 +447,11 @@ class Viewer:
         self.current_fx = self.initial_fx * scale
         self.current_fy = self.initial_fy * scale
 
-        # 3. 再描画をトリガー
         self.camera_dirty = True
 
     def key_event(self, window, key, scancode, action, mods):
+        """キーボード入力イベントを処理する。"""
+        # ファイル切り替え (Up/Down)
         if action == glfw.PRESS:
             if key == glfw.KEY_UP:
                 self.load_params(
@@ -467,6 +460,7 @@ class Viewer:
             elif key == glfw.KEY_DOWN:
                 self.load_params((self.current_data_index + 1) % len(self.pkl_files))
 
+        # 学習済みカメラ視点切り替え (Left/Right)
         if action in (glfw.PRESS, glfw.REPEAT):
             cam_changed = False
             if key == glfw.KEY_RIGHT:
@@ -477,19 +471,23 @@ class Viewer:
                     self.current_cam_index - 1 + self.num_cameras
                 ) % self.num_cameras
                 cam_changed = True
+
             if cam_changed:
-                # カメラを切り替えたら、基準となるfx,fyもそのカメラのものに更新
+                # 基準となる焦点距離を切り替え後のカメラのものに更新
                 new_intrinsics = self.camera_params["intrinsic_batch"][self.current_cam_index]
                 self.initial_fx, self.initial_fy, _, _ = new_intrinsics
-                # 現在のウィンドウサイズに合わせて各種パラメータを再計算
-                self.framebuffer_size_callback(self.window, *glfw.get_framebuffer_size(self.window))
-                self.camera.position, self.camera.rotation = self._get_colmap_camera_state(
+                # 現在のウィンドウサイズに合わせてビューポートと焦点距離を再計算
+                w, h = glfw.get_framebuffer_size(self.window)
+                self.framebuffer_size_callback(self.window, w, h)
+                # カメラの位置と回転を更新
+                self.camera.position, self.camera.rotation = self._get_camera_state(
                     self.current_cam_index
                 )
                 self.camera_dirty = True
                 print(f"Jump to Camera: {self.current_cam_index + 1}/{self.num_cameras}", end="\r")
 
     def mouse_button_callback(self, window, button, action, mods):
+        """マウスボタンのプレス/リリースイベントを処理する。"""
         if action == glfw.PRESS:
             if button == glfw.MOUSE_BUTTON_LEFT:
                 self.left_mouse_dragging = True
@@ -497,24 +495,29 @@ class Viewer:
                 self.right_mouse_dragging = True
             self.last_mouse_pos = glfw.get_cursor_pos(window)
         elif action == glfw.RELEASE:
-            self.left_mouse_dragging = self.right_mouse_dragging = False
+            self.left_mouse_dragging = False
+            self.right_mouse_dragging = False
             self.last_mouse_pos = None
 
     def cursor_pos_callback(self, window, xpos, ypos):
+        """マウスカーソルの移動イベントを処理する。"""
         if (
             not (self.left_mouse_dragging or self.right_mouse_dragging)
             or self.last_mouse_pos is None
         ):
             return
+
         dx, dy = xpos - self.last_mouse_pos[0], ypos - self.last_mouse_pos[1]
-        if self.left_mouse_dragging:
+        if self.left_mouse_dragging:  # 左ドラッグでオービット
             self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ORBIT)
-        if self.right_mouse_dragging:
+        if self.right_mouse_dragging:  # 右ドラッグでパン
             self.camera.pan(dx, dy, self.MOUSE_SENSITIVITY_PAN)
+
         self.camera_dirty = True
         self.last_mouse_pos = (xpos, ypos)
 
     def scroll_callback(self, window, xoffset, yoffset):
+        """マウスホイールのスクロールイベントを処理する。"""
         self.camera.zoom(yoffset, self.MOUSE_SENSITIVITY_ZOOM)
         self.camera_dirty = True
 
@@ -531,11 +534,13 @@ def main():
     )
     args = parser.parse_args()
 
+    # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
     directory = args.params_filepath.parent
     pkl_files = sorted(directory.glob("*.pkl"))
     if not pkl_files:
         sys.exit(f"Error: No .pkl files found in {directory}")
 
+    # 初期ファイルのインデックスを特定
     try:
         initial_filepath = args.params_filepath.resolve()
         initial_index = [p.resolve() for p in pkl_files].index(initial_filepath)
@@ -545,6 +550,7 @@ def main():
         )
         initial_index, initial_filepath = 0, pkl_files[0]
 
+    # 初期データをロード
     print(f"Loading initial file: {initial_filepath.name}")
     try:
         with initial_filepath.open("rb") as f:
@@ -552,6 +558,7 @@ def main():
     except Exception as e:
         sys.exit(f"FATAL ERROR: Could not load initial file {initial_filepath.name}: {e}")
 
+    # ビューアを起動
     viewer = Viewer(pkl_files, initial_data, initial_index)
     viewer.run()
 
