@@ -75,6 +75,8 @@ class Viewer:
 
         mat3 quat_to_rotmat(vec4 q) {
             float x = q.x, y = q.y, z = q.z, w = q.w;
+
+            // GLSL defines directly in column-major order
             return mat3(
                 1.f - 2.f * (y * y + z * z), 2.f * (x * y + w * z), 2.f * (x * z - w * y),
                 2.f * (x * y - w * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z + w * x),
@@ -171,7 +173,11 @@ class Viewer:
     MOUSE_SENSITIVITY_ZOOM = 0.3
 
     def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
-        self.trans = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+        # Transformation matrix from learning coordinate system to OpenGL coordinate system
+        # Right-handed coordinate system: x-axis pointing right, y-axis pointing down, z-axis pointing forward
+        # -> Right-handed coordinate system: x-axis pointing right, y-axis pointing up, z-axis pointing backward
+        self.to_gl_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+
         self.pkl_files = pkl_files
         self.current_data_index = initial_index
         self.params_cache = {initial_index: self.params_to_gl_data(initial_data["params"])}
@@ -197,70 +203,27 @@ class Viewer:
 
     def params_to_gl_data(self, params):
         """paramsをGLのデータ形式に変換する。"""
-        params["means3d"] = (self.trans @ params["means3d"].T).T
+        params["means3d"] = (self.to_gl_matrix @ params["means3d"].T).T
 
         nan_mask = np.isnan(params["quats"]).any(axis=1)
         params["quats"][nan_mask] = np.array([0, 0, 0, 1])  # nanデータは無回転にする
         params["quats"] = params["quats"] / np.linalg.norm(params["quats"], axis=1, keepdims=True)
 
-        params["quats"] = self.matrix_to_quaternion(
-            self.trans @ Rotation.from_quat(params["quats"]).as_matrix()
-        )
+        transformed_matrix = self.to_gl_matrix @ Rotation.from_quat(params["quats"]).as_matrix()
+        params["quats"] = Rotation.from_matrix(transformed_matrix).as_quat()
 
         return params
 
     def camera_params_to_gl_data(self, camera_params):
-        camera_params["rot_mat_batch"] = self.trans @ camera_params["rot_mat_batch"] @ self.trans.T
-        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] @ self.trans.T
+        camera_params["rot_mat_batch"] = (
+            self.to_gl_matrix @ camera_params["rot_mat_batch"] @ self.to_gl_matrix.T
+        )
+        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] @ self.to_gl_matrix
         camera_params["intrinsic_batch"] = camera_params["intrinsic_batch"] * np.array(
             [1, 1, 1, -1]
         )
 
         return camera_params
-
-    def matrix_to_quaternion(self, matrices):
-        m00, m01, m02 = matrices[:, 0, 0], matrices[:, 0, 1], matrices[:, 0, 2]
-        m10, m11, m12 = matrices[:, 1, 0], matrices[:, 1, 1], matrices[:, 1, 2]
-        m20, m21, m22 = matrices[:, 2, 0], matrices[:, 2, 1], matrices[:, 2, 2]
-        t = 1 + m00 + m11 + m22
-        s = np.ones_like(m00)
-        w = np.ones_like(m00)
-        x = np.ones_like(m00)
-        y = np.ones_like(m00)
-        z = np.ones_like(m00)
-
-        t_positive = t > 0.0000001
-        s[t_positive] = 0.5 / np.sqrt(t[t_positive])
-        w[t_positive] = 0.25 / s[t_positive]
-        x[t_positive] = (m21[t_positive] - m12[t_positive]) * s[t_positive]
-        y[t_positive] = (m02[t_positive] - m20[t_positive]) * s[t_positive]
-        z[t_positive] = (m10[t_positive] - m01[t_positive]) * s[t_positive]
-
-        c1 = np.logical_and(m00 > m11, m00 > m22)
-        cond1 = np.logical_and(np.logical_not(t_positive), np.logical_and(m00 > m11, m00 > m22))
-
-        s[cond1] = 2.0 * np.sqrt(1.0 + m00[cond1] - m11[cond1] - m22[cond1])
-        w[cond1] = (m21[cond1] - m12[cond1]) / s[cond1]
-        x[cond1] = 0.25 * s[cond1]
-        y[cond1] = (m01[cond1] + m10[cond1]) / s[cond1]
-        z[cond1] = (m02[cond1] + m20[cond1]) / s[cond1]
-
-        c2 = np.logical_and(np.logical_not(c1), m11 > m22)
-        cond2 = np.logical_and(np.logical_not(t_positive), c2)
-        s[cond2] = 2.0 * np.sqrt(1.0 + m11[cond2] - m00[cond2] - m22[cond2])
-        w[cond2] = (m02[cond2] - m20[cond2]) / s[cond2]
-        x[cond2] = (m01[cond2] + m10[cond2]) / s[cond2]
-        y[cond2] = 0.25 * s[cond2]
-        z[cond2] = (m12[cond2] + m21[cond2]) / s[cond2]
-
-        c3 = np.logical_and(np.logical_not(c1), np.logical_not(c2))
-        cond3 = np.logical_and(np.logical_not(t_positive), c3)
-        s[cond3] = 2.0 * np.sqrt(1.0 + m22[cond3] - m00[cond3] - m11[cond3])
-        w[cond3] = (m10[cond3] - m01[cond3]) / s[cond3]
-        x[cond3] = (m02[cond3] + m20[cond3]) / s[cond3]
-        y[cond3] = (m12[cond3] + m21[cond3]) / s[cond3]
-        z[cond3] = 0.25 * s[cond3]
-        return np.array([x, y, z, w]).T
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
