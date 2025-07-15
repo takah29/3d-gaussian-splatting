@@ -1,17 +1,15 @@
-import argparse
 import sys
-from pathlib import Path
 
 import glfw
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from camera import GlCamera
-from data_manager import DataManager
-from renderer_gl import RendererGl
+from gs.viewer.camera import CameraBase
+from gs.viewer.data_manager import DataManager
+from gs.viewer.renderer import GsRendererBase
 
 
-class ViewerGl:
+class Viewer:
     """ユーザー入力、カメラ制御、データ管理を行い、Rendererに描画指示を出すクラス。"""
 
     # --- マウス感度設定 ---
@@ -19,10 +17,18 @@ class ViewerGl:
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
     MOUSE_SENSITIVITY_ROLL = 0.1
-    WINDOW_TITLE = "OpenGL 3DGS Viewer"
 
-    def __init__(self, data_manager: DataManager, initial_index: int):
+    def __init__(
+        self,
+        camera: CameraBase,
+        data_manager: DataManager,
+        initial_index: int,
+        window_title: str = "3DGS Viewer",
+    ):
+        self.window_title = window_title
+        self.camera = camera
         self.data_manager = data_manager
+
         self.params = self.data_manager.load_data(initial_index)
         self.camera_params, self.consts = self.data_manager.get_camera_params_and_consts()
 
@@ -35,12 +41,7 @@ class ViewerGl:
 
         # --- 初期化処理の実行 ---
         self._init_glfw()
-        self.renderer = RendererGl(self.params)  # レンダラの初期化
-        self.camera = self._create_initial_camera()
         self._setup_callbacks()
-
-        # 初回のビューポート設定
-        self.framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
         # --- 状態変数の初期化 ---
         self.left_mouse_dragging = False
@@ -48,6 +49,14 @@ class ViewerGl:
         self.middle_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
+        self.current_cam_index = 0
+        self.num_cameras = self.camera_params["rot_mat_batch"].shape[0]
+
+    def set_renderer(self, renderer: GsRendererBase):
+        self.renderer = renderer
+
+        # 初回のビューポート設定
+        self.framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
     def run(self):
         """メインループを実行する。"""
@@ -83,7 +92,7 @@ class ViewerGl:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            self.initial_width, self.initial_height, self.WINDOW_TITLE, None, None
+            self.initial_width, self.initial_height, self.window_title, None, None
         )
         if not self.window:
             glfw.terminate()
@@ -91,13 +100,6 @@ class ViewerGl:
         glfw.make_context_current(self.window)
         glfw.swap_interval(1)
         self.update_window_title()
-
-    def _create_initial_camera(self) -> GlCamera:
-        """最初の学習済みカメラ視点からCameraオブジェクトを生成する。"""
-        self.num_cameras = len(self.camera_params["t_vec_batch"])
-        self.current_cam_index = 0
-        pos, rot = self._get_camera_state(self.current_cam_index)
-        return GlCamera(position=pos, rotation=rot)
 
     def _get_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
         """指定インデックスの学習済みカメラ情報を取得し、位置と回転を返す。"""
@@ -120,7 +122,7 @@ class ViewerGl:
         """現在のファイル名と位置情報でウィンドウタイトルを更新する。"""
         filename = self.data_manager.get_current_filename()
         current_index, n_data = self.data_manager.get_current_data_index()
-        title = f"{self.WINDOW_TITLE} ({filename} {current_index + 1}/{n_data})"
+        title = f"{self.window_title} ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
     def change_camera_pose(self):
@@ -158,6 +160,7 @@ class ViewerGl:
         self.renderer.set_viewport(view_x, view_y, self.render_width, self.render_height)
 
         # 2. 新しい解像度に合わせて焦点距離をスケーリング
+        # OpenGL版のみ使用
         scale = self.render_width / self.initial_width
         self.current_fx = self.initial_fx * scale
         self.current_fy = self.initial_fy * scale
@@ -232,41 +235,3 @@ class ViewerGl:
         """マウスホイールのスクロールイベントを処理する。"""
         self.camera.zoom(yoffset, self.MOUSE_SENSITIVITY_ZOOM)
         self.camera_dirty = True
-
-
-def main():
-    """アプリケーションのエントリーポイント。"""
-    parser = argparse.ArgumentParser(description="OpenGL 3D Gaussian Splatting Interactive Viewer")
-    parser.add_argument(
-        "-f",
-        "--params_filepath",
-        type=Path,
-        default=Path(__file__).parent / "output" / "params_final.pkl",
-        help="Path to the initial params pickle file.",
-    )
-    args = parser.parse_args()
-
-    # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
-    directory = args.params_filepath.parent
-    pkl_files = sorted(directory.glob("*.pkl"))
-    if not pkl_files:
-        sys.exit(f"Error: No .pkl files found in {directory}")
-
-    # 初期ファイルのインデックスを特定
-    try:
-        initial_filepath = args.params_filepath.resolve()
-        initial_index = [p.resolve() for p in pkl_files].index(initial_filepath)
-    except ValueError:
-        print(
-            f"Warning: Specified file {args.params_filepath} not found. Starting with the first one."
-        )
-        initial_index = 0
-
-    # ビューアを起動
-    data_manager = DataManager.create_for_gldata(pkl_files)
-    viewer = ViewerGl(data_manager, initial_index)
-    viewer.run()
-
-
-if __name__ == "__main__":
-    main()

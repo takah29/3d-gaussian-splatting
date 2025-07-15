@@ -4,7 +4,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
-class BaseCamera(ABC):
+class CameraBase(ABC):
     """カメラの位置と回転を管理する抽象基底クラス。"""
 
     def __init__(self, position: np.ndarray, rotation: Rotation):
@@ -34,7 +34,7 @@ class BaseCamera(ABC):
         """ロール（カメラの前方軸周りの回転）操作。"""
 
 
-class GlCamera(BaseCamera):
+class CameraGl(CameraBase):
     """OpenGLビューア用のカメラ。 get_view_matrix を提供する。"""
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
@@ -63,7 +63,7 @@ class GlCamera(BaseCamera):
         self.rotation = roll_rotation * self.rotation
 
 
-class JaxCamera(BaseCamera):
+class CameraJax(CameraBase):
     """JAXビューア用のカメラ。 get_view_params を提供する。"""
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
