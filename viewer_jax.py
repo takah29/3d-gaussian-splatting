@@ -24,6 +24,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from camera import JaxCamera
+from data_manager import DataManager
 from gs.make_update import make_render
 from gs.utils import calc_tile_max_gs_num, print_info
 
@@ -46,7 +47,7 @@ class GaussianRenderer:
         return np.asarray(self.render_fn(self.params, view_params))
 
 
-class Viewer:
+class ViewerJax:
     """GLFWウィンドウ、ユーザー入力、レンダリングループを管理するメインクラス。"""
 
     # --- シェーダ定義 (画像をテクスチャとして描画するだけのシンプルなシェーダ) ---
@@ -66,22 +67,18 @@ class Viewer:
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
 
-    def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
-        self.pkl_files = pkl_files
-        self.current_data_index = initial_index
+    def __init__(self, data_manager: DataManager, initial_index: int):
+        self.data_manager = data_manager
+        self.params = self.data_manager.load_data(initial_index)
+        self.camera_params = self.data_manager.camera_params
+        self.consts = self.data_manager.consts
 
-        # --- データの初期化 ---
-        # paramsは切り替え時に更新されるため、キャッシュに保持
-        self.params_cache = {initial_index: initial_data["params"]}
-        # camera_paramsとconstsは不変
-        self.camera_params = initial_data["camera_params"]
-        self.consts = initial_data["consts"]
         self.render_width, self.render_height = self.consts["img_shape"][::-1]
 
         # --- 初期化処理の実行 ---
         self._init_glfw()
         self._init_moderngl()
-        self.renderer = GaussianRenderer(initial_data["params"], self.consts)
+        self.renderer = GaussianRenderer(self.params, self.consts)
         self.camera = self._create_initial_camera()
         self._setup_callbacks()
 
@@ -175,35 +172,18 @@ class Viewer:
 
     def load_params(self, index: int):
         """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
-        if index == self.current_data_index:
-            return
-
-        if index in self.params_cache:
-            params = self.params_cache[index]
-        else:
-            filepath = self.pkl_files[index]
-            print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
-            try:
-                with filepath.open("rb") as f:
-                    reconstruction = pickle.load(f)
-                params = reconstruction["params"]
-                self.params_cache[index] = params
-                print(" Done.")
-            except Exception as e:
-                print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
-                return
+        self.params = self.data_manager.load_data(index)
 
         # レンダラーが保持するパラメータを更新
-        self.renderer.params = params
-        self.current_data_index = index
+        self.renderer.params = self.params
         self.camera_dirty = True
         self.update_window_title()
 
     def update_window_title(self):
         """現在のファイル名と位置情報でウィンドウタイトルを更新する。"""
-        filename = self.pkl_files[self.current_data_index].name
-        k, n = self.current_data_index + 1, len(self.pkl_files)
-        title = f"JAX 3DGS Viewer ({filename} {k}/{n})"
+        filename = self.data_manager.get_current_filename()
+        current_index, n_data = self.data_manager.get_current_data_index()
+        title = f"OpenGL 3DGS Viewer ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
     def run(self):
@@ -263,11 +243,11 @@ class Viewer:
         # ファイル切り替え (Up/Down)
         if action == glfw.PRESS:
             if key == glfw.KEY_UP:
-                self.load_params(
-                    (self.current_data_index - 1 + len(self.pkl_files)) % len(self.pkl_files)
-                )
+                current_index = self.data_manager.navigate(-1)
+                self.load_params(current_index)
             elif key == glfw.KEY_DOWN:
-                self.load_params((self.current_data_index + 1) % len(self.pkl_files))
+                current_index = self.data_manager.navigate(1)
+                self.load_params(current_index)
 
         # 学習済みカメラ視点切り替え (Left/Right)
         if action in (glfw.PRESS, glfw.REPEAT):
@@ -374,7 +354,8 @@ def main():
     print_info(initial_data["params"], initial_data["consts"])
 
     # ビューアを起動
-    viewer = Viewer(pkl_files, initial_data, initial_index)
+    data_manager = DataManager(pkl_files)
+    viewer = ViewerJax(data_manager, initial_index)
     viewer.run()
 
 
