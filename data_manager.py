@@ -43,50 +43,59 @@ class DataManager:
         pkl_files: list[Path],
         post_process: PostProcess | None = None,
     ) -> None:
-        self.pkl_files = pkl_files
-        self.current_data_index: int | None = None
-        self.params_cache: dict[int, Any] = {}
-        self.camera_params: dict | None = None
-        self.consts: dict | None = None
-        self.post_process = post_process
+        self._pkl_files = pkl_files
+        self._params_cache: dict[int, Any] = {}
+        self._current_data_index: int | None = None
+        self._camera_params: dict | None = None
+        self._consts: dict | None = None
+        self._post_process = post_process
 
     def get_current_filename(self) -> str:
         """現在のファイル名を返す。"""
-        return self.pkl_files[self.current_data_index].name
-
-    def get_current_data_index(self):
-        if self.current_data_index is None:
+        if self._current_data_index is None:
             msg = "No data loaded."
             raise ValueError(msg)
-        return self.current_data_index, len(self.pkl_files)
+        return self._pkl_files[self._current_data_index].name
+
+    def get_current_data_index(self) -> tuple[int, int]:
+        if self._current_data_index is None:
+            msg = "No data loaded."
+            raise ValueError(msg)
+        return self._current_data_index, len(self._pkl_files)
+
+    def get_camera_params_and_consts(self) -> tuple[dict, dict]:
+        if self._camera_params is None or self._consts is None:
+            msg = "No data loaded."
+            raise ValueError(msg)
+        return self._camera_params, self._consts
 
     def load_data(self, index: int) -> dict | None:
         """指定インデックスのデータをロードし、キャッシュする。"""
-        if index in self.params_cache:
-            return self.params_cache[index]
+        if index in self._params_cache:
+            return self._params_cache[index]
 
-        filepath = self.pkl_files[index]
+        filepath = self._pkl_files[index]
         print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
         try:
             with filepath.open("rb") as f:
                 data = pickle.load(f)
 
             # 必要に応じてロード後の後処理を実行
-            if self.post_process:
-                data["params"] = self.post_process.params_to_gldata(data["params"])
+            if self._post_process:
+                data["params"] = self._post_process.params_to_gldata(data["params"])
 
-            if len(self.params_cache) == 0:
-                if self.post_process:
-                    self.camera_params = (
-                        self.post_process.camera_params_to_gldata(data["camera_params"])
-                        if self.post_process
+            if len(self._params_cache) == 0:
+                if self._post_process:
+                    self._camera_params = (
+                        self._post_process.camera_params_to_gldata(data["camera_params"])
+                        if self._post_process
                         else data["camera_params"]
                     )
                 else:
-                    self.camera_params = data["camera_params"]
-                self.consts = data["consts"]
-            self.params_cache[index] = data["params"]
-            self.current_data_index = index
+                    self._camera_params = data["camera_params"]
+                self._consts = data["consts"]
+            self._params_cache[index] = data["params"]
+            self._current_data_index = index
 
             print(" Done.")
             return data["params"]
@@ -97,9 +106,13 @@ class DataManager:
 
     def navigate(self, step: int) -> int:
         """現在のインデックスをstep分移動させる。"""
-        num_files = len(self.pkl_files)
-        self.current_data_index = (self.current_data_index + step + num_files) % num_files
-        return self.current_data_index
+        if self._current_data_index is None:
+            msg = "No data loaded."
+            raise ValueError(msg)
+
+        num_files = len(self._pkl_files)
+        self._current_data_index = (self._current_data_index + step + num_files) % num_files
+        return self._current_data_index
 
     @staticmethod
     def create_for_gldata(pkl_files: list[Path]) -> "DataManager":

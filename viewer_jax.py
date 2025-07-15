@@ -12,7 +12,6 @@
 """
 
 import argparse
-import pickle
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,7 +25,7 @@ from scipy.spatial.transform import Rotation
 from camera import JaxCamera
 from data_manager import DataManager
 from gs.make_update import make_render
-from gs.utils import calc_tile_max_gs_num, print_info
+from gs.utils import calc_tile_max_gs_num
 
 
 @dataclass
@@ -71,9 +70,19 @@ class ViewerJax:
     def __init__(self, data_manager: DataManager, initial_index: int):
         self.data_manager = data_manager
         self.params = self.data_manager.load_data(initial_index)
-        self.camera_params = self.data_manager.camera_params
-        self.consts = self.data_manager.consts
+        self.camera_params, self.consts = self.data_manager.get_camera_params_and_consts()
 
+        # JAX版特有のレンダリング設定
+        self.tile_max_gs_num_coeff = 28.0
+        self.consts["tile_max_gs_num"] = calc_tile_max_gs_num(
+            self.consts["tile_size"],
+            self.consts["img_shape"][0],
+            self.consts["img_shape"][1],
+            self.consts["max_points"],
+            self.tile_max_gs_num_coeff,
+        )
+
+        # --- パラメータの初期化 ---
         self.render_width, self.render_height = self.consts["img_shape"][::-1]
 
         # --- 初期化処理の実行 ---
@@ -88,6 +97,32 @@ class ViewerJax:
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
+
+    def run(self):
+        """メインループを実行する。"""
+        while not glfw.window_should_close(self.window):
+            glfw.poll_events()
+
+            if self.camera_dirty:
+                # 1. カメラから視点パラメータを取得
+                rot_mat, t_vec = self.camera.get_view_params()
+                intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
+                view_params = {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic_vec}
+
+                # 2. JAXで画像をレンダリング
+                image_data = self.renderer.render(view_params)
+
+                # 3. 生成された画像をテクスチャに書き込み
+                self.image_texture.write(image_data.astype("f4").tobytes())
+                self.camera_dirty = False
+
+            # 描画処理
+            self.ctx.clear(0.0, 0.0, 0.0)
+            self.image_texture.use(location=0)
+            self.program["u_texture"].value = 0
+            self.quad_vao.render(moderngl.TRIANGLE_STRIP)
+            glfw.swap_buffers(self.window)
+        glfw.terminate()
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
@@ -187,32 +222,6 @@ class ViewerJax:
         title = f"{self.WINDOW_TITLE} ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
-    def run(self):
-        """メインループを実行する。"""
-        while not glfw.window_should_close(self.window):
-            glfw.poll_events()
-
-            if self.camera_dirty:
-                # 1. カメラから視点パラメータを取得
-                rot_mat, t_vec = self.camera.get_view_params()
-                intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
-                view_params = {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic_vec}
-
-                # 2. JAXで画像をレンダリング
-                image_data = self.renderer.render(view_params)
-
-                # 3. 生成された画像をテクスチャに書き込み
-                self.image_texture.write(image_data.astype("f4").tobytes())
-                self.camera_dirty = False
-
-            # 描画処理
-            self.ctx.clear(0.0, 0.0, 0.0)
-            self.image_texture.use(location=0)
-            self.program["u_texture"].value = 0
-            self.quad_vao.render(moderngl.TRIANGLE_STRIP)
-            glfw.swap_buffers(self.window)
-        glfw.terminate()
-
     # --- Event Callbacks ---
     def framebuffer_size_callback(self, window, width, height):
         """ウィンドウリサイズ時に呼び出され、アスペクト比を維持しつつウィンドウを覆うように表示（カバー）する。"""
@@ -263,11 +272,12 @@ class ViewerJax:
                 cam_changed = True
 
             if cam_changed:
-                self.camera.position, self.camera.rotation = self._get_camera_state(
-                    self.current_cam_index
-                )
+                self.change_camera_pose()
                 self.camera_dirty = True
                 print(f"Jump to Camera: {self.current_cam_index + 1}/{self.num_cameras}", end="\r")
+
+    def change_camera_pose(self):
+        self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
 
     def mouse_button_callback(self, window, button, action, mods):
         """マウスボタンのプレス/リリースイベントを処理する。"""
@@ -331,28 +341,7 @@ def main():
         print(
             f"Warning: Specified file {args.params_filepath} not found. Starting with the first one."
         )
-        initial_index, initial_filepath = 0, pkl_files[0]
-
-    # 初期データをロード
-    print(f"Loading initial file: {initial_filepath.name}")
-    try:
-        with initial_filepath.open("rb") as f:
-            initial_data = pickle.load(f)
-    except Exception as e:
-        sys.exit(f"FATAL ERROR: Could not load initial file {initial_filepath.name}: {e}")
-
-    # JAX版特有のレンダリング設定
-    tile_max_gs_num_coeff = 28.0
-    consts = initial_data["consts"]
-    consts["tile_max_gs_num"] = calc_tile_max_gs_num(
-        consts["tile_size"],
-        consts["img_shape"][0],
-        consts["img_shape"][1],
-        consts["max_points"],
-        tile_max_gs_num_coeff,
-    )
-    initial_data["consts"] = consts
-    print_info(initial_data["params"], initial_data["consts"])
+        initial_index = 0
 
     # ビューアを起動
     data_manager = DataManager(pkl_files)
