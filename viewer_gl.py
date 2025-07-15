@@ -1,5 +1,4 @@
 import argparse
-import pickle
 import sys
 from pathlib import Path
 
@@ -12,9 +11,10 @@ import pyglm.glm as pglm
 from scipy.spatial.transform import Rotation
 
 from camera import GlCamera
+from data_manager import DataManager
 
 
-class Viewer:
+class ViewerGl:
     """GLFWウィンドウ、ユーザー入力、OpenGLレンダリングループを管理するメインクラス。"""
 
     # --- シェーダ定義 ---
@@ -131,19 +131,11 @@ class Viewer:
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
 
-    def __init__(self, pkl_files: list[Path], initial_data: dict, initial_index: int):
-        # 学習時の座標系からOpenGLの座標系への変換行列を定義
-        # (右手系: X右, Y下, Z奥 -> 右手系: X右, Y上, Z手前)
-        self.to_gl_matrix = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
-
-        self.pkl_files = pkl_files
-        self.current_data_index = initial_index
-
-        # --- データの初期化と座標変換 ---
-        self.params = self.params_to_gl_data(initial_data["params"])
-        self.params_cache = {initial_index: self.params}
-        self.camera_params = self.camera_params_to_gl_data(initial_data["camera_params"])
-        self.consts = initial_data["consts"]
+    def __init__(self, data_manager: DataManager, initial_index: int):
+        self.data_manager = data_manager
+        self.params = self.data_manager.load_data(initial_index)
+        self.camera_params = self.data_manager.camera_params
+        self.consts = self.data_manager.consts
 
         # --- パラメータの初期化 ---
         self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
@@ -165,28 +157,6 @@ class Viewer:
         self.right_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
-
-    def params_to_gl_data(self, params: dict) -> dict:
-        """学習済みパラメータをOpenGLの座標系とデータ形式に変換する。"""
-        params["means3d"] = (self.to_gl_matrix @ params["means3d"].T).T
-
-        nan_mask = np.isnan(params["quats"]).any(axis=1)
-        params["quats"][nan_mask] = np.array([0, 0, 0, 1])
-        params["quats"] /= np.linalg.norm(params["quats"], axis=1, keepdims=True)
-
-        rot_matrices = Rotation.from_quat(params["quats"]).as_matrix()
-        transformed_matrices = self.to_gl_matrix @ rot_matrices
-        params["quats"] = Rotation.from_matrix(transformed_matrices).as_quat()
-        return params
-
-    def camera_params_to_gl_data(self, camera_params: dict) -> dict:
-        """カメラパラメータをOpenGLの座標系に変換する。"""
-        camera_params["rot_mat_batch"] = (
-            self.to_gl_matrix @ camera_params["rot_mat_batch"] @ self.to_gl_matrix.T
-        )
-        camera_params["t_vec_batch"] = camera_params["t_vec_batch"] @ self.to_gl_matrix
-        camera_params["intrinsic_batch"] *= np.array([1, 1, 1, -1])
-        return camera_params
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
@@ -314,35 +284,16 @@ class Viewer:
 
     def load_params(self, index: int):
         """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
-        if index == self.current_data_index:
-            return
-
-        if index in self.params_cache:
-            params = self.params_cache[index]
-        else:
-            filepath = self.pkl_files[index]
-            print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
-            try:
-                with filepath.open("rb") as f:
-                    data = pickle.load(f)
-                params = self.params_to_gl_data(data["params"])
-                self.params_cache[index] = params
-                print(" Done.")
-            except Exception as e:
-                print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
-                return
-
-        self.params = params
-        self._update_buffers(params)
-        self.current_data_index = index
+        self.params = self.data_manager.load_data(index)
+        self._update_buffers(self.params)
         self.camera_dirty = True
         self.update_window_title()
 
     def update_window_title(self):
         """現在のファイル名と位置情報でウィンドウタイトルを更新する。"""
-        filename = self.pkl_files[self.current_data_index].name
-        k, n = self.current_data_index + 1, len(self.pkl_files)
-        title = f"OpenGL 3DGS Viewer ({filename} {k}/{n})"
+        filename = self.data_manager.get_current_filename()
+        current_index, n_data = self.data_manager.get_current_data_index()
+        title = f"OpenGL 3DGS Viewer ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
     def run(self):
@@ -411,11 +362,11 @@ class Viewer:
         # ファイル切り替え (Up/Down)
         if action == glfw.PRESS:
             if key == glfw.KEY_UP:
-                self.load_params(
-                    (self.current_data_index - 1 + len(self.pkl_files)) % len(self.pkl_files)
-                )
+                current_index = self.data_manager.navigate(-1)
+                self.load_params(current_index)
             elif key == glfw.KEY_DOWN:
-                self.load_params((self.current_data_index + 1) % len(self.pkl_files))
+                current_index = self.data_manager.navigate(1)
+                self.load_params(current_index)
 
         # 学習済みカメラ視点切り替え (Left/Right)
         if action in (glfw.PRESS, glfw.REPEAT):
@@ -507,16 +458,9 @@ def main():
         )
         initial_index, initial_filepath = 0, pkl_files[0]
 
-    # 初期データをロード
-    print(f"Loading initial file: {initial_filepath.name}")
-    try:
-        with initial_filepath.open("rb") as f:
-            initial_data = pickle.load(f)
-    except Exception as e:
-        sys.exit(f"FATAL ERROR: Could not load initial file {initial_filepath.name}: {e}")
-
     # ビューアを起動
-    viewer = Viewer(pkl_files, initial_data, initial_index)
+    data_manager = DataManager.create_for_gldata(pkl_files)
+    viewer = ViewerGl(data_manager, initial_index)
     viewer.run()
 
 
