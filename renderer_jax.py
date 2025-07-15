@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 import moderngl
 import numpy as np
 
-# 'gs'モジュールがプロジェクト内に存在することを前提とします。
 from gs.make_update import make_render
 
 
@@ -14,7 +13,6 @@ from gs.make_update import make_render
 class RendererJax:
     """JAXによる計算とModernGLによる表示の両方を担当するレンダラ。"""
 
-    ctx: moderngl.Context
     initial_params: dict
     consts: dict
 
@@ -50,6 +48,7 @@ class RendererJax:
 
     def __post_init__(self):
         """JAXのレンダリング関数とModernGLの描画オブジェクトを初期化する。"""
+        self.ctx = moderngl.create_context(require=330)
         # --- JAX部分の初期化 ---
         self.params = self.initial_params
         self.render_fn = make_render(self.consts, jit=True)
@@ -114,4 +113,4 @@ class RendererJax:
         self.quad_vao.release()
         self.program.release()
         self.image_texture.release()
-        # コンテキストはViewer側で解放
+        self.ctx.release()

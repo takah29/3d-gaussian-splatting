@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 import glfw
-import moderngl
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -53,17 +52,20 @@ class ViewerJax:
         )
 
         # --- パラメータの初期化 ---
-        self.render_width, self.render_height = self.consts["img_shape"][::-1]
+        self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
+        intrinsic_vec = self.camera_params["intrinsic_batch"][0]
+        self.initial_fx, self.initial_fy, _, _ = intrinsic_vec
+        self.render_width, self.render_height = self.initial_width, self.initial_height
+        self.current_fx, self.current_fy = self.initial_fx, self.initial_fy
 
         # --- 初期化処理の実行 ---
         self._init_glfw()
-        self.ctx = moderngl.create_context(require=330)
-        self.renderer = RendererJax(self.ctx, self.params, self.consts)
+        self.renderer = RendererJax(self.params, self.consts)
         self.camera = self._create_initial_camera()
         self._setup_callbacks()
 
         # 初回のビューポート設定
-        self.framebuffer_size_callback(self.window, self.render_width, self.render_height)
+        self.framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
         # --- 状態変数の初期化 ---
         self.left_mouse_dragging = False
@@ -75,22 +77,24 @@ class ViewerJax:
     def run(self):
         """メインループを実行する。"""
         while not glfw.window_should_close(self.window):
-            glfw.poll_events()
-
+            glfw.wait_events()
             if self.camera_dirty:
-                rot_mat, t_vec = self.camera.get_view_params()
-                intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
-                view_params = {
-                    "rot_mat": rot_mat,
-                    "t_vec": t_vec,
-                    "intrinsic_vec": intrinsic_vec,
-                }
-                self.renderer.render(view_params)
+                self._render_frame()
                 self.camera_dirty = False
 
-            glfw.swap_buffers(self.window)
+        self.renderer.shutdown()
+        glfw.terminate()
 
-        self.shutdown()
+    def _render_frame(self):
+        rot_mat, t_vec = self.camera.get_view_params()
+        intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
+        view_params = {
+            "rot_mat": rot_mat,
+            "t_vec": t_vec,
+            "intrinsic_vec": intrinsic_vec,
+        }
+        self.renderer.render(view_params)
+        glfw.swap_buffers(self.window)
 
     def _init_glfw(self):
         """GLFWとウィンドウを初期化する。"""
@@ -100,7 +104,7 @@ class ViewerJax:
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            self.render_width, self.render_height, self.WINDOW_TITLE, None, None
+            self.initial_width, self.initial_height, self.WINDOW_TITLE, None, None
         )
         if not self.window:
             glfw.terminate()
@@ -151,34 +155,31 @@ class ViewerJax:
         self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
         self.camera_dirty = True
 
-    def shutdown(self):
-        """リソースを解放する。"""
-        self.renderer.shutdown()
-        self.ctx.release()
-        glfw.terminate()
-
     def framebuffer_size_callback(self, window, width, height):
         """ウィンドウリサイズ時に呼び出され、アスペクト比を維持しつつ表示する。"""
-        if height == 0:
+        if height == 0 or width == 0:
             return
-        aspect_ratio = self.render_width / self.render_height
-        window_aspect_ratio = width / height
 
-        if window_aspect_ratio > aspect_ratio:
-            new_w = width
-            new_h = int(width / aspect_ratio)
-            offset_x, offset_y = 0, (height - new_h) // 2
-        else:
-            new_h = height
-            new_w = int(height * aspect_ratio)
-            offset_x, offset_y = (width - new_w) // 2, 0
+        content_aspect = self.initial_width / self.initial_height
+        window_aspect = width / height
 
-        self.renderer.set_viewport(offset_x, offset_y, new_w, new_h)
+        # 元の画像の縦横比を保ちつつ、ウィンドウを覆うように描画領域を計算（カバー）
+        if window_aspect > content_aspect:  # ウィンドウが横長
+            self.render_width = width
+            self.render_height = int(width / content_aspect)
+            view_x, view_y = 0, (height - self.render_height) // 2
+        else:  # ウィンドウが縦長または同じ
+            self.render_height = height
+            self.render_width = int(height * content_aspect)
+            view_x, view_y = (width - self.render_width) // 2, 0
+
+        # 1. レンダラにビューポートを設定
+        self.renderer.set_viewport(view_x, view_y, self.render_width, self.render_height)
+
         self.camera_dirty = True
 
     def key_callback(self, window, key, scancode, action, mods):
         """キーボード入力イベントを処理する。"""
-        # ... (中略、内容は変更なし) ...
         if action == glfw.PRESS:
             if key == glfw.KEY_UP:
                 current_index = self.data_manager.navigate(-1)
@@ -204,7 +205,6 @@ class ViewerJax:
 
     def mouse_button_callback(self, window, button, action, mods):
         """マウスボタンのプレス/リリースイベントを処理する。"""
-        # ... (中略、内容は変更なし) ...
         if action == glfw.PRESS:
             if button == glfw.MOUSE_BUTTON_LEFT:
                 self.left_mouse_dragging = True
@@ -221,7 +221,6 @@ class ViewerJax:
 
     def cursor_pos_callback(self, window, xpos, ypos):
         """マウスカーソルの移動イベントを処理する。"""
-        # ... (中略、内容は変更なし) ...
         if (
             not any(
                 [self.left_mouse_dragging, self.right_mouse_dragging, self.middle_mouse_dragging]
@@ -243,14 +242,12 @@ class ViewerJax:
 
     def scroll_callback(self, window, xoffset, yoffset):
         """マウスホイールのスクロールイベントを処理する。"""
-        # ... (中略、内容は変更なし) ...
         self.camera.zoom(yoffset, self.MOUSE_SENSITIVITY_ZOOM)
         self.camera_dirty = True
 
 
 def main():
     """アプリケーションのエントリーポイント。"""
-    # ... (中略、内容は変更なし) ...
     parser = argparse.ArgumentParser(description="JAX 3D Gaussian Splatting Interactive Viewer")
     parser.add_argument(
         "-f",

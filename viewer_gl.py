@@ -41,8 +41,7 @@ class ViewerGl:
         self._setup_callbacks()
 
         # 初回のビューポート設定
-        width, height = glfw.get_framebuffer_size(self.window)
-        self.framebuffer_size_callback(self.window, width, height)
+        self.framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
         # --- 状態変数の初期化 ---
         self.left_mouse_dragging = False
@@ -146,7 +145,7 @@ class ViewerGl:
 
     def framebuffer_size_callback(self, window, width, height):
         """ウィンドウリサイズ時に呼び出され、ビューポートと解像度関連の値を更新する。"""
-        if width == 0 or height == 0:
+        if height == 0 or width == 0:
             return
 
         content_aspect = self.initial_width / self.initial_height
