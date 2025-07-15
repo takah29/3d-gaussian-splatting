@@ -130,6 +130,7 @@ class ViewerGl:
     MOUSE_SENSITIVITY_ORBIT = 0.2
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
+    MOUSE_SENSITIVITY_ROLL = 0.1
     WINDOW_TITLE = "OpenGL 3DGS Viewer"
 
     def __init__(self, data_manager: DataManager, initial_index: int):
@@ -155,6 +156,7 @@ class ViewerGl:
         self.sorter = jax.jit(self._get_sorted_indices_jax)
         self.left_mouse_dragging = False
         self.right_mouse_dragging = False
+        self.middle_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
 
@@ -341,16 +343,21 @@ class ViewerGl:
                 self.left_mouse_dragging = True
             elif button == glfw.MOUSE_BUTTON_RIGHT:
                 self.right_mouse_dragging = True
+            elif button == glfw.MOUSE_BUTTON_MIDDLE:
+                self.middle_mouse_dragging = True
             self.last_mouse_pos = glfw.get_cursor_pos(window)
         elif action == glfw.RELEASE:
             self.left_mouse_dragging = False
             self.right_mouse_dragging = False
+            self.middle_mouse_dragging = False
             self.last_mouse_pos = None
 
     def cursor_pos_callback(self, window, xpos, ypos):
         """マウスカーソルの移動イベントを処理する。"""
         if (
-            not (self.left_mouse_dragging or self.right_mouse_dragging)
+            not (
+                self.left_mouse_dragging or self.right_mouse_dragging or self.middle_mouse_dragging
+            )
             or self.last_mouse_pos is None
         ):
             return
@@ -360,6 +367,8 @@ class ViewerGl:
             self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ORBIT)
         if self.right_mouse_dragging:  # 右ドラッグでパン
             self.camera.pan(dx, dy, self.MOUSE_SENSITIVITY_PAN)
+        if self.middle_mouse_dragging:  # 中ドラッグでズーム
+            self.camera.roll(dx, self.MOUSE_SENSITIVITY_ROLL)
 
         self.camera_dirty = True
         self.last_mouse_pos = (xpos, ypos)

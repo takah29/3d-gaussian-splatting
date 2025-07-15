@@ -65,6 +65,7 @@ class ViewerJax:
     MOUSE_SENSITIVITY_ORBIT = 0.2
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
+    MOUSE_SENSITIVITY_ROLL = 0.1
     WINDOW_TITLE = "JAX 3DGS Viewer"
 
     def __init__(self, data_manager: DataManager, initial_index: int):
@@ -73,7 +74,7 @@ class ViewerJax:
         self.camera_params, self.consts = self.data_manager.get_camera_params_and_consts()
 
         # JAX版特有のレンダリング設定
-        self.tile_max_gs_num_coeff = 28.0
+        self.tile_max_gs_num_coeff = 25.0
         self.consts["tile_max_gs_num"] = calc_tile_max_gs_num(
             self.consts["tile_size"],
             self.consts["img_shape"][0],
@@ -95,6 +96,7 @@ class ViewerJax:
         # --- 状態変数の初期化 ---
         self.left_mouse_dragging = False
         self.right_mouse_dragging = False
+        self.middle_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
 
@@ -286,16 +288,21 @@ class ViewerJax:
                 self.left_mouse_dragging = True
             elif button == glfw.MOUSE_BUTTON_RIGHT:
                 self.right_mouse_dragging = True
+            elif button == glfw.MOUSE_BUTTON_MIDDLE:
+                self.middle_mouse_dragging = True
             self.last_mouse_pos = glfw.get_cursor_pos(window)
         elif action == glfw.RELEASE:
             self.left_mouse_dragging = False
             self.right_mouse_dragging = False
+            self.middle_mouse_dragging = False
             self.last_mouse_pos = None
 
     def cursor_pos_callback(self, window, xpos, ypos):
         """マウスカーソルの移動イベントを処理する。"""
         if (
-            not (self.left_mouse_dragging or self.right_mouse_dragging)
+            not (
+                self.left_mouse_dragging or self.right_mouse_dragging or self.middle_mouse_dragging
+            )
             or self.last_mouse_pos is None
         ):
             return
@@ -305,6 +312,8 @@ class ViewerJax:
             self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ORBIT)
         if self.right_mouse_dragging:  # 右ドラッグでパン
             self.camera.pan(dx, dy, self.MOUSE_SENSITIVITY_PAN)
+        if self.middle_mouse_dragging:  # 中ドラッグでズーム
+            self.camera.roll(dx, self.MOUSE_SENSITIVITY_ROLL)
 
         self.camera_dirty = True
         self.last_mouse_pos = (xpos, ypos)
