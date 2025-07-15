@@ -31,6 +31,7 @@ class GlCamera(BaseCamera):
         """現在の位置と回転からOpenGL互換の4x4ビュー行列(w2c)を計算する。"""
         rot_mat = self.rotation.as_matrix().T
         t_vec = -rot_mat @ self.position
+
         view_matrix = np.identity(4, dtype="f4")
         view_matrix[:3, :3] = rot_mat
         view_matrix[:3, 3] = t_vec
@@ -39,10 +40,8 @@ class GlCamera(BaseCamera):
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """OpenGL版のオービット操作。"""
         rot_y = Rotation.from_rotvec(np.radians(dx * sensitivity) * np.array([0, 1, 0]))
-        rot_x = Rotation.from_rotvec(
-            self.rotation.apply(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
-        )
-        self.rotation = rot_x * self.rotation * rot_y
+        rot_x = Rotation.from_rotvec(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
+        self.rotation *= rot_y * rot_x
 
     def pan(self, dx: float, dy: float, sensitivity: float):
         """OpenGL版のパン操作。"""
@@ -60,7 +59,7 @@ class JaxCamera(BaseCamera):
 
     def get_view_params(self) -> tuple[np.ndarray, np.ndarray]:
         """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
-        rot_mat = self.rotation.inv().as_matrix()
+        rot_mat = self.rotation.as_matrix().T
         t_vec = -rot_mat @ self.position
         return rot_mat, t_vec
 
