@@ -11,50 +11,7 @@ import numpy as np
 import pyglm.glm as pglm
 from scipy.spatial.transform import Rotation
 
-
-class Camera:
-    """カメラの位置と回転を管理し、ビュー行列（world-to-camera）を計算するクラス。"""
-
-    def __init__(self, position: np.ndarray, rotation: Rotation):
-        self.position = position
-        self.rotation = rotation
-
-    def get_view_matrix(self) -> np.ndarray:
-        """現在の位置と回転からOpenGL互換の4x4ビュー行列(w2c)を計算する。"""
-        # カメラの回転の逆行列（転置）を計算
-        rot_mat = self.rotation.as_matrix().T
-        # カメラの位置を逆変換
-        t_vec = -rot_mat @ self.position
-
-        # 4x4のビュー行列を組み立てる
-        view_matrix = np.identity(4, dtype="f4")
-        view_matrix[:3, :3] = rot_mat
-        view_matrix[:3, 3] = t_vec
-        return view_matrix
-
-    def rotate(self, dx: float, dy: float, sensitivity: float):
-        """現在の回転を基準に、マウスの動きに応じたオービット操作（視点回転）を行う。"""
-        # Y軸周りの回転（水平方向）はワールド座標のY軸を基準にする
-        rot_y = Rotation.from_rotvec(np.radians(dx * sensitivity) * np.array([0, 1, 0]))
-        # X軸周りの回転（垂直方向）はカメラのローカルX軸を基準にする
-        rot_x = Rotation.from_rotvec(
-            self.rotation.apply(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
-        )
-        # 一般的なオービット操作の回転合成順序
-        self.rotation = rot_x * self.rotation * rot_y
-
-    def pan(self, dx: float, dy: float, sensitivity: float):
-        """現在の向きを基準に、マウスの動きに応じたパン操作（平行移動）を行う。"""
-        # マウスの動きからカメラのローカル座標系での移動ベクトルを計算
-        pan_vector = np.array([-dx, dy, 0]) * sensitivity
-        self.position += self.rotation.apply(pan_vector)
-
-    def zoom(self, delta: float, sensitivity: float):
-        """現在の向きを基準に、マウスホイールに応じたズーム操作を行う。"""
-        # マウスホイールのスクロール量からカメラのローカルZ軸方向の移動ベクトルを計算
-        # yoffsetは上下で符号が異なるため、-deltaで方向を統一
-        zoom_vector = np.array([0, 0, -delta]) * sensitivity
-        self.position += self.rotation.apply(zoom_vector)
+from camera import GlCamera
 
 
 class Viewer:
@@ -339,12 +296,12 @@ class Viewer:
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
         glfw.set_scroll_callback(self.window, self.scroll_callback)
 
-    def _create_initial_camera(self) -> Camera:
+    def _create_initial_camera(self) -> GlCamera:
         """最初の学習済みカメラ視点からCameraオブジェクトを生成する。"""
         self.num_cameras = len(self.camera_params["t_vec_batch"])
         self.current_cam_index = 0
         pos, rot = self._get_camera_state(self.current_cam_index)
-        return Camera(position=pos, rotation=rot)
+        return GlCamera(position=pos, rotation=rot)
 
     def _get_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
         """指定インデックスの学習済みカメラ情報を取得し、位置と回転を返す。"""

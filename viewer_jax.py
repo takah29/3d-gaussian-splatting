@@ -23,45 +23,9 @@ import moderngl
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from camera import JaxCamera
 from gs.make_update import make_render
 from gs.utils import calc_tile_max_gs_num, print_info
-
-
-@dataclass
-class Camera:
-    """カメラの位置と回転を管理し、ビューパラメータを計算するクラス。"""
-
-    position: np.ndarray
-    rotation: Rotation
-
-    def get_view_params(self) -> tuple[np.ndarray, np.ndarray]:
-        """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
-        # カメラの回転の逆行列を計算
-        rot_mat = self.rotation.inv().as_matrix()
-        # カメラの位置を逆変換
-        t_vec = -rot_mat @ self.position
-        return rot_mat, t_vec
-
-    def rotate(self, dx: float, dy: float, sensitivity: float):
-        """現在の回転を基準に、マウスの動きに応じたオービット操作（視点回転）を行う。"""
-        # Y軸周りの回転（水平方向）
-        rot_y = Rotation.from_rotvec(np.radians(-dx * sensitivity) * np.array([0, 1, 0]))
-        # X軸周りの回転（垂直方向）
-        rot_x = Rotation.from_rotvec(np.radians(dy * sensitivity) * np.array([1, 0, 0]))
-        # JAX版の実装に合わせた回転合成順序
-        self.rotation *= rot_y * rot_x
-
-    def pan(self, dx: float, dy: float, sensitivity: float):
-        """現在の向きを基準に、マウスの動きに応じたパン操作（平行移動）を行う。"""
-        # マウスの動きからカメラのローカル座標系での移動ベクトルを計算
-        pan_vector = np.array([-dx, -dy, 0]) * sensitivity
-        self.position += self.rotation.apply(pan_vector)
-
-    def zoom(self, delta: float, sensitivity: float):
-        """現在の向きを基準に、マウスホイールに応じたズーム操作を行う。"""
-        # マウスホイールのスクロール量からカメラのローカルZ軸方向の移動ベクトルを計算
-        zoom_vector = np.array([0, 0, delta]) * sensitivity
-        self.position += self.rotation.apply(zoom_vector)
 
 
 @dataclass
@@ -193,12 +157,12 @@ class Viewer:
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
         glfw.set_scroll_callback(self.window, self.scroll_callback)
 
-    def _create_initial_camera(self) -> Camera:
+    def _create_initial_camera(self) -> JaxCamera:
         """最初の学習済みカメラ視点からCameraオブジェクトを生成する。"""
         self.num_cameras = len(self.camera_params["t_vec_batch"])
         self.current_cam_index = 0
         pos, rot = self._get_camera_state(self.current_cam_index)
-        return Camera(position=pos, rotation=rot)
+        return JaxCamera(position=pos, rotation=rot)
 
     def _get_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
         """指定インデックスの学習済みカメラ情報を取得し、位置と回転を返す。"""
