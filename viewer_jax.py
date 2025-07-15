@@ -66,6 +66,7 @@ class ViewerJax:
     MOUSE_SENSITIVITY_ORBIT = 0.2
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
+    WINDOW_TITLE = "JAX 3DGS Viewer"
 
     def __init__(self, data_manager: DataManager, initial_index: int):
         self.data_manager = data_manager
@@ -92,11 +93,11 @@ class ViewerJax:
         """GLFWとウィンドウを初期化する。"""
         if not glfw.init():
             sys.exit("FATAL ERROR: glfw initialization failed.")
-        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
-            self.render_width, self.render_height, "JAX 3DGS Viewer", None, None
+            self.render_width, self.render_height, self.WINDOW_TITLE, None, None
         )
         if not self.window:
             glfw.terminate()
@@ -183,7 +184,7 @@ class ViewerJax:
         """現在のファイル名と位置情報でウィンドウタイトルを更新する。"""
         filename = self.data_manager.get_current_filename()
         current_index, n_data = self.data_manager.get_current_data_index()
-        title = f"OpenGL 3DGS Viewer ({filename} {current_index + 1}/{n_data})"
+        title = f"{self.WINDOW_TITLE} ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
     def run(self):
