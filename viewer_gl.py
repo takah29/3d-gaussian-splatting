@@ -4,7 +4,6 @@ from pathlib import Path
 
 import glfw
 import numpy as np
-import pyglm.glm as pglm
 from scipy.spatial.transform import Rotation
 
 from camera import GlCamera
@@ -63,16 +62,12 @@ class ViewerGl:
 
     def _render_frame(self):
         """フレームを描画する。"""
-        view_matrix = self.camera.get_view_matrix()
-        fovy = 2 * np.arctan(self.initial_height / (2 * self.initial_fy))
-        aspect = self.initial_width / self.initial_height
-        projection_matrix = pglm.perspective(fovy, aspect, 0.2, 1000.0)
-
+        rot_mat, t_vec = self.camera.get_view()
         self.renderer.render(
-            view_matrix=view_matrix,
-            projection_matrix=projection_matrix,
+            rot_mat=rot_mat,
+            t_vec=t_vec,
             focal_lengths=(self.current_fx, self.current_fy),
-            resolution=(self.render_width, self.render_height),
+            resolution_wh=(self.render_width, self.render_height),
         )
 
         glfw.swap_buffers(self.window)

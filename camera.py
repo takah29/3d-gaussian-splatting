@@ -11,6 +11,12 @@ class BaseCamera(ABC):
         self.position = position
         self.rotation = rotation
 
+    def get_view(self) -> tuple[np.ndarray, np.ndarray]:
+        """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
+        rot_mat = self.rotation.as_matrix().T
+        t_vec = -rot_mat @ self.position
+        return rot_mat, t_vec
+
     @abstractmethod
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """視点回転（オービット）操作。"""
@@ -30,16 +36,6 @@ class BaseCamera(ABC):
 
 class GlCamera(BaseCamera):
     """OpenGLビューア用のカメラ。 get_view_matrix を提供する。"""
-
-    def get_view_matrix(self) -> np.ndarray:
-        """現在の位置と回転からOpenGL互換の4x4ビュー行列(w2c)を計算する。"""
-        rot_mat = self.rotation.as_matrix().T
-        t_vec = -rot_mat @ self.position
-
-        view_matrix = np.identity(4, dtype="f4")
-        view_matrix[:3, :3] = rot_mat
-        view_matrix[:3, 3] = t_vec
-        return view_matrix
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """OpenGL版のオービット操作。"""
@@ -69,12 +65,6 @@ class GlCamera(BaseCamera):
 
 class JaxCamera(BaseCamera):
     """JAXビューア用のカメラ。 get_view_params を提供する。"""
-
-    def get_view_params(self) -> tuple[np.ndarray, np.ndarray]:
-        """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
-        rot_mat = self.rotation.as_matrix().T
-        t_vec = -rot_mat @ self.position
-        return rot_mat, t_vec
 
     def rotate(self, dx: float, dy: float, sensitivity: float):
         """JAX版のオービット操作。"""
