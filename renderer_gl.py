@@ -145,15 +145,15 @@ class RendererGl:
         self.means3d_jax = jnp.asarray(initial_params["means3d"])
         self.sorter = jax.jit(self._get_sorted_indices_jax)
 
-    def render(self, rot_mat, t_vec, focal_lengths, resolution_wh):
+    def render(self, view, focal_lengths, resolution_wh):
         """シーンを描画する。"""
         fovy = 2 * np.arctan(resolution_wh[1] / (2 * focal_lengths[1]))
         aspect = resolution_wh[0] / resolution_wh[1]
         projection_matrix = pglm.perspective(fovy, aspect, 0.2, 1000.0)
 
         view_matrix = np.identity(4, dtype="f4")
-        view_matrix[:3, :3] = rot_mat
-        view_matrix[:3, 3] = t_vec
+        view_matrix[:3, :3] = view["rot_mat"]
+        view_matrix[:3, 3] = view["t_vec"]
 
         # Uniform変数をシェーダに送信
         self.program["view_matrix"].write(pglm.mat4(view_matrix))

@@ -11,7 +11,7 @@ class BaseCamera(ABC):
         self.position = position
         self.rotation = rotation
 
-    def get_view(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_pose(self) -> tuple[np.ndarray, np.ndarray]:
         """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
         rot_mat = self.rotation.as_matrix().T
         t_vec = -rot_mat @ self.position
@@ -58,7 +58,7 @@ class GlCamera(BaseCamera):
         # カメラのローカルZ軸（前方）ベクトルを取得
         roll_axis = self.rotation.apply(np.array([0, 0, 1]))
         # マウスの水平移動量に応じて回転を生成
-        roll_rotation = Rotation.from_rotvec(np.radians(-dx * sensitivity) * roll_axis)
+        roll_rotation = Rotation.from_rotvec(np.radians(dx * sensitivity) * roll_axis)
         # 現在の回転に合成
         self.rotation = roll_rotation * self.rotation
 

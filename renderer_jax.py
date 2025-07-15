@@ -100,10 +100,10 @@ class RendererJax:
             self.program, [(quad_buffer, "2f 2f", "in_position", "in_texcoord_0")]
         )
 
-    def render(self, view_params: dict):
+    def render(self, view, focal_lengths, resolution_wh):
         """JAXで画像を計算し、その結果をModernGLで画面に描画する。"""
         # 1. JAXで画像をレンダリング
-        image_data = np.asarray(self.render_fn(self.params, view_params))
+        image_data = np.asarray(self.render_fn(self.params, view))
 
         # 2. 生成された画像をテクスチャに書き込み、画面に描画
         self.image_texture.write(image_data.astype("f4").tobytes())

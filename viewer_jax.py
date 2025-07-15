@@ -75,14 +75,18 @@ class ViewerJax:
         glfw.terminate()
 
     def _render_frame(self):
-        rot_mat, t_vec = self.camera.get_view_params()
+        rot_mat, t_vec = self.camera.get_pose()
         intrinsic_vec = self.camera_params["intrinsic_batch"][self.current_cam_index]
-        view_params = {
+        view = {
             "rot_mat": rot_mat,
             "t_vec": t_vec,
             "intrinsic_vec": intrinsic_vec,
         }
-        self.renderer.render(view_params)
+        self.renderer.render(
+            view,
+            focal_lengths=(self.current_fx, self.current_fy),
+            resolution_wh=(self.render_width, self.render_height),
+        )
         glfw.swap_buffers(self.window)
 
     def _init_glfw(self):
