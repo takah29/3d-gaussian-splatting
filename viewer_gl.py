@@ -66,7 +66,7 @@ class ViewerGl:
         view_matrix = self.camera.get_view_matrix()
         fovy = 2 * np.arctan(self.initial_height / (2 * self.initial_fy))
         aspect = self.initial_width / self.initial_height
-        projection_matrix = pglm.perspective(fovy, aspect, 0.1, 1000.0)
+        projection_matrix = pglm.perspective(fovy, aspect, 0.2, 1000.0)
 
         self.renderer.render(
             view_matrix=view_matrix,
@@ -126,14 +126,9 @@ class ViewerGl:
         glfw.set_window_title(self.window, title)
 
     def change_camera_pose(self):
-        # 基準となる焦点距離を切り替え後のカメラのものに更新
-        new_intrinsics = self.camera_params["intrinsic_batch"][self.current_cam_index]
-        self.initial_fx, self.initial_fy, _, _ = new_intrinsics
-        # 現在のウィンドウサイズに合わせてビューポートと焦点距離を再計算
-        w, h = glfw.get_framebuffer_size(self.window)
-        self.framebuffer_size_callback(self.window, w, h)
-        # カメラの位置と回転を更新
+        """学習済みカメラ視点を切り替える。"""
         self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
+        self.camera_dirty = True
 
     def _setup_callbacks(self):
         """GLFWのイベントコールバックを設定する。"""
@@ -196,7 +191,6 @@ class ViewerGl:
 
             if cam_changed:
                 self.change_camera_pose()
-                self.camera_dirty = True
                 print(f"Jump to Camera: {self.current_cam_index + 1}/{self.num_cameras}", end="\r")
 
     def mouse_button_callback(self, window, button, action, mods):

@@ -7,6 +7,7 @@ import moderngl
 import numpy as np
 
 from gs.make_update import make_render
+from gs.utils import calc_tile_max_gs_num
 
 
 @dataclass
@@ -56,6 +57,16 @@ class RendererJax:
         # --- ModernGL部分の初期化 ---
         self.program = self.ctx.program(
             vertex_shader=self.VERTEX_SHADER, fragment_shader=self.FRAGMENT_SHADER
+        )
+
+        # JAX版特有のレンダリング設定
+        self.tile_max_gs_num_coeff = 25.0
+        self.consts["tile_max_gs_num"] = calc_tile_max_gs_num(
+            self.consts["tile_size"],
+            self.consts["img_shape"][0],
+            self.consts["img_shape"][1],
+            self.consts["max_points"],
+            self.tile_max_gs_num_coeff,
         )
 
         width, height = self.consts["img_shape"][::-1]

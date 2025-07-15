@@ -22,7 +22,6 @@ from scipy.spatial.transform import Rotation
 # ローカルモジュールがプロジェクト内に存在することを前提とします。
 from camera import JaxCamera
 from data_manager import DataManager
-from gs.utils import calc_tile_max_gs_num
 from renderer_jax import RendererJax
 
 
@@ -40,16 +39,6 @@ class ViewerJax:
         self.data_manager = data_manager
         self.params = self.data_manager.load_data(initial_index)
         self.camera_params, self.consts = self.data_manager.get_camera_params_and_consts()
-
-        # JAX版特有のレンダリング設定
-        self.tile_max_gs_num_coeff = 25.0
-        self.consts["tile_max_gs_num"] = calc_tile_max_gs_num(
-            self.consts["tile_size"],
-            self.consts["img_shape"][0],
-            self.consts["img_shape"][1],
-            self.consts["max_points"],
-            self.tile_max_gs_num_coeff,
-        )
 
         # --- パラメータの初期化 ---
         self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
@@ -100,7 +89,7 @@ class ViewerJax:
         """GLFWとウィンドウを初期化する。"""
         if not glfw.init():
             sys.exit("FATAL ERROR: glfw initialization failed.")
-        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
         self.window = glfw.create_window(
@@ -112,14 +101,6 @@ class ViewerJax:
         glfw.make_context_current(self.window)
         glfw.swap_interval(1)
         self.update_window_title()
-
-    def _setup_callbacks(self):
-        """GLFWのイベントコールバックを設定する。"""
-        glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
-        glfw.set_key_callback(self.window, self.key_callback)
-        glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
-        glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
-        glfw.set_scroll_callback(self.window, self.scroll_callback)
 
     def _create_initial_camera(self) -> JaxCamera:
         """最初の学習済みカメラ視点からCameraオブジェクトを生成する。"""
@@ -154,6 +135,14 @@ class ViewerJax:
         """学習済みカメラ視点を切り替える。"""
         self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
         self.camera_dirty = True
+
+    def _setup_callbacks(self):
+        """GLFWのイベントコールバックを設定する。"""
+        glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
+        glfw.set_key_callback(self.window, self.key_callback)
+        glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+        glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
+        glfw.set_scroll_callback(self.window, self.scroll_callback)
 
     def framebuffer_size_callback(self, window, width, height):
         """ウィンドウリサイズ時に呼び出され、アスペクト比を維持しつつ表示する。"""
