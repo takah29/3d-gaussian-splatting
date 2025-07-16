@@ -1,21 +1,26 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 
 class CameraBase(ABC):
-    """カメラの位置と回転を管理する抽象基底クラス。"""
+    """カメラの位置と回転を管理する抽象基底クラス
 
-    def __init__(self, position: np.ndarray, rotation: Rotation):
+    c2W形式でカメラパラメータを管理する
+    """
+
+    def __init__(self, position: npt.NDArray, rotation: Rotation, intrinsic: npt.NDArray) -> None:
         self.position = position
         self.rotation = rotation
+        self.intrinsic = intrinsic
 
-    def get_pose(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_view(self) -> dict[str, npt.NDArray]:
         """現在の位置と回転からw2cビュー行列の回転と並進を計算する。"""
         rot_mat = self.rotation.as_matrix().T
         t_vec = -rot_mat @ self.position
-        return rot_mat, t_vec
+        return {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": self.intrinsic}
 
     @abstractmethod
     def rotate(self, dx: float, dy: float, sensitivity: float):

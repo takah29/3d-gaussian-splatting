@@ -13,16 +13,18 @@ from gs.viewer.viewer import Viewer
 def create_gl_viewer(pkl_files: list[Path], initial_index: int):
     data_manager = DataManager.create_for_gldata(pkl_files)
     params = data_manager.load_data(initial_index)
-    camera_params, _ = data_manager.get_camera_params_and_consts()
 
     camera_index = 0
-    rot_mat_w2c = camera_params["rot_mat_batch"][camera_index]
-    t_vec_w2c = camera_params["t_vec_batch"][camera_index]
+    view = data_manager.get_camera_param(camera_index)
+    rot_mat_w2c = view["rot_mat"]
+    t_vec_w2c = view["t_vec"]
     c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
     c2w_position = -c2w_rotation.apply(t_vec_w2c)
 
-    camera = CameraGl(c2w_position, c2w_rotation)
+    camera = CameraGl(c2w_position, c2w_rotation, view["intrinsic_vec"])
     viewer = Viewer(camera, data_manager, initial_index, window_title="OpenGL 3DGS Viewer")
+
+    # OpenGLの初期化後に作成する必要があるので作成後にviewerに設定
     renderer = GsRendererGl(params)
     viewer.set_renderer(renderer)
 
