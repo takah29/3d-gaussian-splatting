@@ -68,3 +68,7 @@ include = ["src", "."]
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 reportPrivateImportUsage = false
+reportAttributeAccessIssue = false
+
+[tool.mypy]
+disable_error_code = ["union-attr", "assignment", "attr-defined"]

@@ -91,7 +91,7 @@ class DataManager:
             "intrinsic_vec": self._camera_params["intrinsic_batch"][index],
         }
 
-    def get_consts(self) -> tuple[dict, dict]:
+    def get_consts(self) -> dict:
         """設定値を取得"""
         if self._consts is None:
             msg = "No data loaded."
@@ -114,7 +114,7 @@ class DataManager:
         self._camera_param_index = (self._camera_param_index + step + num_params) % num_params
         return self._camera_param_index
 
-    def load_data(self, index: int) -> dict | None:
+    def load_data(self, index: int) -> dict[str, npt.NDArray] | None:
         """指定インデックスのデータをロードし、キャッシュする"""
         if index in self._params_cache:
             return self._params_cache[index]
@@ -123,7 +123,7 @@ class DataManager:
         print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
         try:
             with filepath.open("rb") as f:
-                data = pickle.load(f)
+                data = pickle.load(f)  # noqa: S301
 
             # 必要に応じてロード後の後処理を実行
             if self._post_process:
@@ -145,7 +145,7 @@ class DataManager:
             print(" Done.")
             return data["params"]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
             return None
 

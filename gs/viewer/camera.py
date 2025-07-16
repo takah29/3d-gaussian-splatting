@@ -23,42 +23,42 @@ class CameraBase(ABC):
         return {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": self.intrinsic}
 
     @abstractmethod
-    def rotate(self, dx: float, dy: float, sensitivity: float):
+    def rotate(self, dx: float, dy: float, sensitivity: float) -> None:
         """視点回転（オービット）操作。"""
 
     @abstractmethod
-    def pan(self, dx: float, dy: float, sensitivity: float):
+    def pan(self, dx: float, dy: float, sensitivity: float) -> None:
         """パン（平行移動）操作。"""
 
     @abstractmethod
-    def zoom(self, delta: float, sensitivity: float):
+    def zoom(self, delta: float, sensitivity: float) -> None:
         """ズーム操作。"""
 
     @abstractmethod
-    def roll(self, dx: float, sensitivity: float):
+    def roll(self, dx: float, sensitivity: float) -> None:
         """ロール（カメラの前方軸周りの回転）操作。"""
 
 
 class CameraGl(CameraBase):
     """OpenGLビューア用のカメラ。 get_view_matrix を提供する。"""
 
-    def rotate(self, dx: float, dy: float, sensitivity: float):
+    def rotate(self, dx: float, dy: float, sensitivity: float) -> None:
         """OpenGL版のオービット操作。"""
         rot_y = Rotation.from_rotvec(np.radians(-dx * sensitivity) * np.array([0, 1, 0]))
         rot_x = Rotation.from_rotvec(np.radians(-dy * sensitivity) * np.array([1, 0, 0]))
         self.rotation *= rot_y * rot_x
 
-    def pan(self, dx: float, dy: float, sensitivity: float):
+    def pan(self, dx: float, dy: float, sensitivity: float) -> None:
         """OpenGL版のパン操作。"""
         pan_vector = np.array([-dx, dy, 0]) * sensitivity
         self.position += self.rotation.apply(pan_vector)
 
-    def zoom(self, delta: float, sensitivity: float):
+    def zoom(self, delta: float, sensitivity: float) -> None:
         """OpenGL版のズーム操作。"""
         zoom_vector = np.array([0, 0, -delta]) * sensitivity
         self.position += self.rotation.apply(zoom_vector)
 
-    def roll(self, dx: float, sensitivity: float):
+    def roll(self, dx: float, sensitivity: float) -> None:
         """ロール操作。カメラのローカルZ軸（前方軸）周りに回転する。"""
         # カメラのローカルZ軸（前方）ベクトルを取得
         roll_axis = self.rotation.apply(np.array([0, 0, 1]))
@@ -71,23 +71,23 @@ class CameraGl(CameraBase):
 class CameraJax(CameraBase):
     """JAXビューア用のカメラ。 get_view_params を提供する。"""
 
-    def rotate(self, dx: float, dy: float, sensitivity: float):
+    def rotate(self, dx: float, dy: float, sensitivity: float) -> None:
         """JAX版のオービット操作。"""
         rot_y = Rotation.from_rotvec(np.radians(dx * sensitivity) * np.array([0, 1, 0]))
         rot_x = Rotation.from_rotvec(np.radians(-dy * sensitivity) * np.array([1, 0, 0]))
         self.rotation *= rot_y * rot_x
 
-    def pan(self, dx: float, dy: float, sensitivity: float):
+    def pan(self, dx: float, dy: float, sensitivity: float) -> None:
         """JAX版のパン操作。"""
         pan_vector = np.array([-dx, -dy, 0]) * sensitivity
         self.position += self.rotation.apply(pan_vector)
 
-    def zoom(self, delta: float, sensitivity: float):
+    def zoom(self, delta: float, sensitivity: float) -> None:
         """JAX版のズーム操作。"""
         zoom_vector = np.array([0, 0, delta]) * sensitivity
         self.position += self.rotation.apply(zoom_vector)
 
-    def roll(self, dx: float, sensitivity: float):
+    def roll(self, dx: float, sensitivity: float) -> None:
         """ロール操作。カメラのローカルZ軸（前方軸）周りに回転する。"""
         # カメラのローカルZ軸（前方）ベクトルを取得
         roll_axis = self.rotation.apply(np.array([0, 0, 1]))

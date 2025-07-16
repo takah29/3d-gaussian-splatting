@@ -18,13 +18,13 @@ class GsRendererBase(ABC):
     def render(
         self,
         view: dict[str, npt.NDArray],
-        focal_lengths: tuple[int, int],
+        focal_lengths: tuple[float, float],
         resolution_wh: tuple[int, int],
     ) -> None:
         """指定したパラメータでレンダリングする"""
 
     @abstractmethod
-    def update_gaussian_data(self, params: dict) -> None:
+    def update_gaussian_data(self, params: dict[str, npt.NDArray]) -> None:
         """レンダリングに使用するガウシアンパラメータを更新する。"""
 
     @abstractmethod
@@ -60,7 +60,7 @@ class GsRendererJax(GsRendererBase):
         }
     """
 
-    def __init__(self, initial_params: dict, consts: dict):
+    def __init__(self, initial_params: dict, consts: dict) -> None:
         """JAXのレンダリング関数とModernGLの描画オブジェクトを初期化する。"""
         self.ctx = moderngl.create_context(require=330)
         # --- JAX部分の初期化 ---
@@ -87,34 +87,26 @@ class GsRendererJax(GsRendererBase):
         self.image_texture = self.ctx.texture((width, height), 3, dtype="f4")
         self.program["u_texture"].value = 0  # テクスチャユニット0を使用
 
-        quad_buffer = self.ctx.buffer(
-            np.array(
-                [
-                    -1.0,
-                    -1.0,
-                    0.0,
-                    0.0,  # Bottom Left
-                    1.0,
-                    -1.0,
-                    1.0,
-                    0.0,  # Bottom Right
-                    -1.0,
-                    1.0,
-                    0.0,
-                    1.0,  # Top Left
-                    1.0,
-                    1.0,
-                    1.0,
-                    1.0,  # Top Right
-                ],
-                dtype="f4",
-            )
-        )
+        # fmt: off
+        vertices = [
+            -1.0, -1.0, 0.0, 0.0,  # Bottom Left
+            1.0, -1.0, 1.0, 0.0,  # Bottom Right
+            -1.0,  1.0, 0.0, 1.0,  # Top Left
+            1.0,  1.0, 1.0, 1.0,  # Top Right
+        ]
+        # fmt: on
+
+        quad_buffer = self.ctx.buffer(np.array(vertices, dtype="f4"))
         self.quad_vao = self.ctx.vertex_array(
             self.program, [(quad_buffer, "2f 2f", "in_position", "in_texcoord_0")]
         )
 
-    def render(self, view, focal_lengths, resolution_wh):
+    def render(
+        self,
+        view: dict[str, npt.NDArray],
+        focal_lengths: tuple[float, float],  # noqa: ARG002
+        resolution_wh: tuple[int, int],  # noqa: ARG002
+    ) -> None:
         """JAXで画像を計算し、その結果をModernGLで画面に描画する。"""
         # 1. JAXで画像をレンダリング
         image_data = np.asarray(self.render_fn(self.params, view))
@@ -125,15 +117,15 @@ class GsRendererJax(GsRendererBase):
         self.image_texture.use(location=0)
         self.quad_vao.render(moderngl.TRIANGLE_STRIP)
 
-    def update_gaussian_data(self, params: dict):
+    def update_gaussian_data(self, params: dict) -> None:
         """レンダリングに使用するガウシアンパラメータを更新する。"""
         self.params = params
 
-    def set_viewport(self, x: int, y: int, width: int, height: int):
+    def set_viewport(self, x: int, y: int, width: int, height: int) -> None:
         """ビューポートを設定する。"""
         self.ctx.viewport = (x, y, width, height)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """ModernGLのリソースを解放する。"""
         self.quad_vao.release()
         self.program.release()
@@ -178,7 +170,9 @@ class GsRendererGl(GsRendererBase):
             int offset = instance_idx * data_dim;
 
             vec3 pos_world = vec3(g_data[offset], g_data[offset+1], g_data[offset+2]);
-            vec4 rot_quat = vec4(g_data[offset+3], g_data[offset+4], g_data[offset+5], g_data[offset+6]);
+            vec4 rot_quat = vec4(
+                g_data[offset+3], g_data[offset+4], g_data[offset+5], g_data[offset+6]
+            );
             vec3 scale = vec3(g_data[offset+7], g_data[offset+8], g_data[offset+9]);
             pass_alpha = g_data[offset+10];
             pass_color = vec3(g_data[offset+11], g_data[offset+12], g_data[offset+13]);
@@ -243,7 +237,9 @@ class GsRendererGl(GsRendererBase):
         out vec4 FragColor;
 
         void main() {
-            float power = -0.5 * (pass_conic.x * pass_coordxy.x * pass_coordxy.x + pass_conic.z * pass_coordxy.y * pass_coordxy.y) - pass_conic.y * pass_coordxy.x * pass_coordxy.y;
+            float power = -0.5 * (
+                pass_conic.x * pass_coordxy.x * pass_coordxy.x + pass_conic.z * pass_coordxy.y * pass_coordxy.y
+            ) - pass_conic.y * pass_coordxy.x * pass_coordxy.y;
             if (power > 0.0) discard;
 
             float G_alpha = min(0.99, pass_alpha * exp(power));
@@ -251,9 +247,9 @@ class GsRendererGl(GsRendererBase):
 
             FragColor = vec4(pass_color, G_alpha);
         }
-    """
+    """  # noqa: E501
 
-    def __init__(self, initial_params: dict):
+    def __init__(self, initial_params: dict) -> None:
         self.ctx = moderngl.create_context(require=430)
 
         # シェーダとプログラム
@@ -281,7 +277,12 @@ class GsRendererGl(GsRendererBase):
         self.means3d_jax = jnp.asarray(initial_params["means3d"])
         self.sorter = jax.jit(self._get_sorted_indices_jax)
 
-    def render(self, view, focal_lengths, resolution_wh):
+    def render(
+        self,
+        view: dict[str, npt.NDArray],
+        focal_lengths: tuple[float, float],
+        resolution_wh: tuple[int, int],
+    ) -> None:
         """シーンを描画する。"""
         fovy = 2 * np.arctan(resolution_wh[1] / (2 * focal_lengths[1]))
         aspect = resolution_wh[0] / resolution_wh[1]
@@ -304,7 +305,7 @@ class GsRendererGl(GsRendererBase):
             self._sort_and_update_gaussians(view_matrix)
             self.vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=self.num_gaussians)
 
-    def update_gaussian_data(self, params: dict):
+    def update_gaussian_data(self, params: dict) -> None:
         """ガウシアンデータ用のSSBOを作成または更新する。"""
         new_num_gaussians = params["means3d"].shape[0]
         flat_data = self._flatten_gaussian_data(params)
@@ -326,13 +327,13 @@ class GsRendererGl(GsRendererBase):
             self.ssbo_indices.bind_to_storage_buffer(1)
         else:
             # ガウシアン数が同じなら、データを書き込むだけ
-            self.ssbo_gaussians.write(flat_data.tobytes())
+            self.ssbo_gaussians.write(flat_data.tobytes())  # type: ignore[reportOptionalMemberAccess]
 
-    def set_viewport(self, x, y, width, height):
+    def set_viewport(self, x: int, y: int, width: int, height: int) -> None:
         """ビューポートを設定する。"""
         self.ctx.viewport = (x, y, width, height)
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """リソースを解放する。"""
         if self.ssbo_gaussians:
             self.ssbo_gaussians.release()
@@ -341,12 +342,12 @@ class GsRendererGl(GsRendererBase):
         self.program.release()
         self.ctx.release()
 
-    def update_sorted_indices(self, sorted_indices: np.ndarray):
+    def update_sorted_indices(self, sorted_indices: np.ndarray) -> None:
         """ソート済みインデックスのSSBOを更新する。"""
         if self.ssbo_indices:
             self.ssbo_indices.write(sorted_indices.astype("i4").tobytes())
 
-    def _sort_and_update_gaussians(self, view_matrix: np.ndarray):
+    def _sort_and_update_gaussians(self, view_matrix: np.ndarray) -> None:
         """ガウシアンをソートし、レンダラのインデックスバッファを更新する。"""
         sorted_indices_jax = self.sorter(self.means3d_jax, jnp.array(view_matrix))
         self.update_sorted_indices(np.asarray(sorted_indices_jax))
@@ -355,7 +356,8 @@ class GsRendererGl(GsRendererBase):
     def _flatten_gaussian_data(params: dict) -> np.ndarray:
         """シェーダに渡すためにガウシアンデータをフラット化する。"""
         if "colors" not in params:
-            raise KeyError("The provided .pkl file does not contain the required 'colors' key.")
+            msg = "The provided .pkl file does not contain the required 'colors' key."
+            raise KeyError(msg)
 
         return np.concatenate(
             [
@@ -369,7 +371,7 @@ class GsRendererGl(GsRendererBase):
         ).ravel()
 
     @staticmethod
-    def _get_sorted_indices_jax(means3d_jax, view_matrix_jax):
+    def _get_sorted_indices_jax(means3d_jax: jax.Array, view_matrix_jax: jax.Array) -> jax.Array:
         """JAXを使用して、カメラ視点からの深度に基づいてガウシアンをソートする。"""
         means_homo = jnp.hstack([means3d_jax, jnp.ones((means3d_jax.shape[0], 1))])
         means_view = means_homo @ view_matrix_jax.T

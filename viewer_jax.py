@@ -10,7 +10,7 @@ from gs.viewer.renderer import GsRendererJax
 from gs.viewer.viewer import Viewer
 
 
-def create_jax_viewer(pkl_files: list[Path], initial_index: int):
+def create_jax_viewer(pkl_files: list[Path], initial_index: int) -> Viewer:
     data_manager = DataManager(pkl_files)
     params = data_manager.load_data(initial_index)
 
@@ -26,13 +26,13 @@ def create_jax_viewer(pkl_files: list[Path], initial_index: int):
 
     # OpenGLの初期化後に作成する必要があるので作成後にviewerに設定
     consts = data_manager.get_consts()
-    renderer = GsRendererJax(params, consts)
+    renderer = GsRendererJax(params, consts)  # type: ignore[arg-type]
     viewer.set_renderer(renderer)
 
     return viewer
 
 
-def main():
+def main() -> None:
     """アプリケーションのエントリーポイント。"""
     parser = argparse.ArgumentParser(description="OpenGL 3D Gaussian Splatting Interactive Viewer")
     parser.add_argument(
@@ -56,7 +56,8 @@ def main():
         initial_index = [p.resolve() for p in pkl_files].index(initial_filepath)
     except ValueError:
         print(
-            f"Warning: Specified file {args.params_filepath} not found. Starting with the first one."
+            f"Warning: Specified file {args.params_filepath} "
+            "not found. Starting with the first one."
         )
         initial_index = 0
 

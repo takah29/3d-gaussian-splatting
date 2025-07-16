@@ -1,6 +1,6 @@
 import sys
 
-import glfw
+import glfw  # type: ignore[import-untyped]
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -24,17 +24,17 @@ class Viewer:
         data_manager: DataManager,
         initial_index: int,
         window_title: str = "3DGS Viewer",
-    ):
+    ) -> None:
         self.window_title = window_title
         self.camera = camera
         self.data_manager = data_manager
 
         self.params = self.data_manager.load_data(initial_index)
-        self.consts = self.data_manager.get_consts()
 
         view = self.camera.get_view()
+        consts = self.data_manager.get_consts()
         # --- パラメータの初期化 ---
-        self.initial_width, self.initial_height = self.consts["img_shape"][::-1]
+        self.initial_width, self.initial_height = consts["img_shape"][::-1]
         self.initial_fx, self.initial_fy, _, _ = view["intrinsic_vec"]
         self.render_width, self.render_height = self.initial_width, self.initial_height
         self.current_fx, self.current_fy = self.initial_fx, self.initial_fy
@@ -51,13 +51,13 @@ class Viewer:
         self._init_glfw()
         self._setup_callbacks()
 
-    def set_renderer(self, renderer: GsRendererBase):
+    def set_renderer(self, renderer: GsRendererBase) -> None:
         self.renderer = renderer
 
         # 初回のビューポート設定
         self.framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
-    def run(self):
+    def run(self) -> None:
         """メインループを実行する。"""
         while not glfw.window_should_close(self.window):
             glfw.wait_events()
@@ -68,7 +68,7 @@ class Viewer:
         self.renderer.shutdown()
         glfw.terminate()
 
-    def _render_frame(self):
+    def _render_frame(self) -> None:
         view = self.camera.get_view()
         self.renderer.render(
             view,
@@ -77,7 +77,7 @@ class Viewer:
         )
         glfw.swap_buffers(self.window)
 
-    def _init_glfw(self):
+    def _init_glfw(self) -> None:
         """GLFWとウィンドウを初期化する。"""
         if not glfw.init():
             sys.exit("FATAL ERROR: glfw initialization failed.")
@@ -104,27 +104,27 @@ class Viewer:
         c2w_position = -c2w_rotation.apply(t_vec_w2c)
         return c2w_position, c2w_rotation
 
-    def load_params(self, index: int):
+    def load_params(self, index: int) -> None:
         """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
         self.params = self.data_manager.load_data(index)
-        self.renderer.update_gaussian_data(self.params)
+        self.renderer.update_gaussian_data(self.params)  # type: ignore[arg-type]
 
         self.camera_dirty = True
         self.update_window_title()
 
-    def update_window_title(self):
+    def update_window_title(self) -> None:
         """現在のファイル名と位置情報でウィンドウタイトルを更新する。"""
         filename = self.data_manager.get_current_filename()
         current_index, n_data = self.data_manager.get_current_data_index()
         title = f"{self.window_title} ({filename} {current_index + 1}/{n_data})"
         glfw.set_window_title(self.window, title)
 
-    def change_camera_pose(self):
+    def change_camera_pose(self) -> None:
         """学習済みカメラ視点を切り替える。"""
         self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
         self.camera_dirty = True
 
-    def _setup_callbacks(self):
+    def _setup_callbacks(self) -> None:
         """GLFWのイベントコールバックを設定する。"""
         glfw.set_framebuffer_size_callback(self.window, self.framebuffer_size_callback)
         glfw.set_key_callback(self.window, self.key_callback)
@@ -132,7 +132,7 @@ class Viewer:
         glfw.set_cursor_pos_callback(self.window, self.cursor_pos_callback)
         glfw.set_scroll_callback(self.window, self.scroll_callback)
 
-    def framebuffer_size_callback(self, window, width, height):
+    def framebuffer_size_callback(self, window, width: int, height: int) -> None:  # noqa: ANN001, ARG002
         """ウィンドウリサイズ時に呼び出され、ビューポートと解像度関連の値を更新する。"""
         if height == 0 or width == 0:
             return
@@ -161,7 +161,7 @@ class Viewer:
 
         self.camera_dirty = True
 
-    def key_callback(self, window, key, scancode, action, mods):
+    def key_callback(self, window, key, scancode, action, mods) -> None:  # noqa: ANN001, ARG002
         """キーボード入力イベントを処理する。"""
         # ファイル切り替え (Up/Down)
         if action == glfw.PRESS:
@@ -189,7 +189,7 @@ class Viewer:
                 )
                 print(f"Jump to Camera: {current_camera_param_index + 1}/{num_cameras}", end="\r")
 
-    def mouse_button_callback(self, window, button, action, mods):
+    def mouse_button_callback(self, window, button, action, mods) -> None:  # noqa: ANN001, ARG002
         """マウスボタンのプレス/リリースイベントを処理する。"""
         if action == glfw.PRESS:
             if button == glfw.MOUSE_BUTTON_LEFT:
@@ -205,7 +205,7 @@ class Viewer:
             self.middle_mouse_dragging = False
             self.last_mouse_pos = None
 
-    def cursor_pos_callback(self, window, xpos, ypos):
+    def cursor_pos_callback(self, window, xpos, ypos) -> None:  # noqa: ANN001, ARG002
         """マウスカーソルの移動イベントを処理する。"""
         if (
             not (
@@ -226,7 +226,7 @@ class Viewer:
         self.camera_dirty = True
         self.last_mouse_pos = (xpos, ypos)
 
-    def scroll_callback(self, window, xoffset, yoffset):
+    def scroll_callback(self, window, xoffset, yoffset) -> None:  # noqa: ANN001, ARG002
         """マウスホイールのスクロールイベントを処理する。"""
         self.camera.zoom(yoffset, self.MOUSE_SENSITIVITY_ZOOM)
         self.camera_dirty = True

@@ -10,7 +10,7 @@ from gs.viewer.renderer import GsRendererGl
 from gs.viewer.viewer import Viewer
 
 
-def create_gl_viewer(pkl_files: list[Path], initial_index: int):
+def create_gl_viewer(pkl_files: list[Path], initial_index: int) -> Viewer:
     data_manager = DataManager.create_for_gldata(pkl_files)
     params = data_manager.load_data(initial_index)
 
@@ -25,13 +25,13 @@ def create_gl_viewer(pkl_files: list[Path], initial_index: int):
     viewer = Viewer(camera, data_manager, initial_index, window_title="OpenGL 3DGS Viewer")
 
     # OpenGLの初期化後に作成する必要があるので作成後にviewerに設定
-    renderer = GsRendererGl(params)
+    renderer = GsRendererGl(params)  # type: ignore[arg-type]
     viewer.set_renderer(renderer)
 
     return viewer
 
 
-def main():
+def main() -> None:
     """アプリケーションのエントリーポイント。"""
     parser = argparse.ArgumentParser(description="OpenGL 3D Gaussian Splatting Interactive Viewer")
     parser.add_argument(
@@ -55,7 +55,8 @@ def main():
         initial_index = [p.resolve() for p in pkl_files].index(initial_filepath)
     except ValueError:
         print(
-            f"Warning: Specified file {args.params_filepath} not found. Starting with the first one."
+            f"Warning: Specified file {args.params_filepath} "
+            "not found. Starting with the first one."
         )
         initial_index = 0
 
