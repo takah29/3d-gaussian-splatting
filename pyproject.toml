@@ -3,7 +3,7 @@ name = "3d-gaussian-splatting"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.3.1",
     "jax[cuda12]>=0.6.2",
@@ -15,6 +15,7 @@ dependencies = [
     "fastplotlib>=0.5.0",
     "glfw>=2.9.0",
     "moderngl>=5.12.0",
+    "pyglm>=2.8.2",
 ]
 
 [dependency-groups]
