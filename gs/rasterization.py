@@ -1,10 +1,8 @@
 from functools import partial
+from typing import Any
 
 import jax
 import jax.numpy as jnp
-
-TILE_SIZE = 16  # タイル分割のサイズ（1次元）
-MAX_TILE_INDEX_SIZE = 700  # タイルごとの最大ガウシアン登録数
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
@@ -46,9 +44,9 @@ def _render_pixel(
     pixel_coord: jax.Array,
     depth_decending_indices: jax.Array,
     gaussians: dict[str, jax.Array],
-    background: jax.Array,
+    background: tuple[float, float, float],
 ) -> jax.Array:
-    pixel_color = background.copy()
+    pixel_color = jnp.asarray(background)
     tau = jnp.ones((1,))
 
     means_2d = gaussians["means_2d"][depth_decending_indices]
@@ -68,7 +66,7 @@ def _render_pixel(
         gaussian_idx, gaussian_weight, color = inputs
 
         @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-        def true_fun(pixel_color, tau):
+        def true_fun(pixel_color: jax.Array, tau: jax.Array) -> tuple[jax.Array, jax.Array]:
             updated_pixel_color = pixel_color + color * gaussian_weight * tau
             updated_tau = tau * (1.0 - gaussian_weight)
             return updated_pixel_color, updated_tau
@@ -95,7 +93,7 @@ def rasterize_tile_data(
     depth_decending_indices: jax.Array,
     upperleft_coord: jax.Array,
     gaussians: dict[str, jax.Array],
-    background: jax.Array,
+    background: tuple[float, float, float],
     tile_size: int,
 ) -> jax.Array:
     ii, jj = jnp.mgrid[0:tile_size, 0:tile_size]
@@ -117,8 +115,8 @@ rasterize_tile_data_vmap = jax.vmap(
 def _create_tile_depth_map(
     gaussian_depth: jax.Array,
     gaussian_idx_interval: jax.Array,
-    height_split_num: jax.Array | int,
-    width_split_num: jax.Array | int,
+    height_split_num: int,
+    width_split_num: int,
 ) -> jax.Array:
     inf_depth_map = jnp.full((height_split_num, width_split_num), jnp.inf)
 
@@ -144,8 +142,8 @@ def _create_tile_depth_map(
 
 def _create_tile_depth_decending_indices_batch(
     gaussians: dict[str, jax.Array],
-    height_split_num: jax.Array | int,
-    width_split_num: jax.Array | int,
+    height_split_num: int,
+    width_split_num: int,
     tile_size: int,
     tile_max_gs_num: int,
 ) -> jax.Array:
@@ -155,7 +153,7 @@ def _create_tile_depth_decending_indices_batch(
     gaussian_intervals = jnp.stack(
         (gaussians["means_2d"] - r_batch, gaussians["means_2d"] + r_batch), axis=1
     )
-    gaussian_index_intervals = (gaussian_intervals // TILE_SIZE).astype(
+    gaussian_index_intervals = (gaussian_intervals // tile_size).astype(
         jnp.int32
     )  # [[x_low_idx, y_low_idx], [x_high_idx, y_high_idx]]
 
@@ -170,10 +168,13 @@ def _create_tile_depth_decending_indices_batch(
 
 
 def build_tile_data(
-    gaussians: dict[str, jax.Array], img_shape: jax.Array, tile_size: int, tile_max_gs_num: int
+    gaussians: dict[str, jax.Array],
+    img_shape: tuple[int, int],
+    tile_size: int,
+    tile_max_gs_num: int,
 ) -> tuple[jax.Array, jax.Array]:
-    height_split_num = (img_shape[0] + TILE_SIZE - 1) // TILE_SIZE
-    width_split_num = (img_shape[1] + TILE_SIZE - 1) // TILE_SIZE
+    height_split_num = (img_shape[0] + tile_size - 1) // tile_size
+    width_split_num = (img_shape[1] + tile_size - 1) // tile_size
 
     tile_depth_decending_indices_batch = _create_tile_depth_decending_indices_batch(
         gaussians,
@@ -185,7 +186,7 @@ def build_tile_data(
 
     # タイルごとの左上の座標値を計算
     ii, jj = jnp.mgrid[0:height_split_num, 0:width_split_num]  # iiがy軸、jjがx軸
-    tile_upperleft_coord_batch = jnp.stack([jj * TILE_SIZE, ii * TILE_SIZE], axis=2)
+    tile_upperleft_coord_batch = jnp.stack([jj * tile_size, ii * tile_size], axis=2)
 
     return (
         tile_depth_decending_indices_batch,
@@ -193,9 +194,7 @@ def build_tile_data(
     )
 
 
-def rasterize(
-    gaussians: dict[str, jax.Array], consts: dict[str, int | float | jax.Array]
-) -> jax.Array:
+def rasterize(gaussians: dict[str, jax.Array], consts: dict[str, Any]) -> jax.Array:
     """projectで射影した2Dガウシアンをラスタライズする.
 
     Note:

@@ -1,12 +1,17 @@
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import numpy as np
+import numpy.typing as npt
 from scipy.special import expit
 
 from gs.projection import compute_cov_vmap
 
 
-def prune_gaussians(params, consts):
+def prune_gaussians(
+    params: dict[str, npt.NDArray], consts: dict[str, Any]
+) -> tuple[dict[str, npt.NDArray], int]:
     prune_indices = (expit(params["opacities"]) < consts["eps_prune_alpha"]).ravel()
 
     # 空などを表現する巨大なガウシアンが必要ない場合に有効
@@ -19,7 +24,11 @@ def prune_gaussians(params, consts):
     return pruned_params, prune_indices.sum()
 
 
-def densify_gaussians(params, view_space_grads_mean_norm, consts):
+def densify_gaussians(
+    params: dict[str, npt.NDArray],
+    view_space_grads_mean_norm: npt.NDArray,
+    consts: dict[str, Any],
+) -> tuple[dict[str, npt.NDArray], int, int]:
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_points"] - params["means3d"].shape[0]
 
@@ -41,10 +50,14 @@ def densify_gaussians(params, view_space_grads_mean_norm, consts):
     clone_params, cloned_num = clone_gaussians(target_params, clone_indices)
     covs_3d = compute_cov_vmap(
         target_params["quats"] / np.linalg.norm(target_params["quats"], axis=-1, keepdims=True),
-        np.exp(target_params["scales"]),
+        np.exp(target_params["scales"]),  # type: ignore[arg-type]
     )
     split_params, splited_num = split_gaussians(
-        target_params, covs_3d, split_indices, consts, split_num
+        target_params,
+        covs_3d,  # type: ignore[arg-type]
+        split_indices,
+        consts,
+        split_num,  # type: ignore[arg-type]
     )
 
     params = {
@@ -55,7 +68,9 @@ def densify_gaussians(params, view_space_grads_mean_norm, consts):
     return params, cloned_num, splited_num
 
 
-def clone_gaussians(params, clone_indices):
+def clone_gaussians(
+    params: dict[str, npt.NDArray], clone_indices: npt.NDArray
+) -> tuple[dict[str, npt.NDArray], int]:
     clone_params = {key: val[clone_indices] for key, val in params.items()}
 
     # 以降で異なる勾配更新が起こり自然と分離するため同じパラメータのガウシアンを複製
@@ -64,7 +79,13 @@ def clone_gaussians(params, clone_indices):
     return merged_params, clone_indices.sum()
 
 
-def split_gaussians(params, covs_3d, split_indices, consts, split_num):
+def split_gaussians(
+    params: dict[str, npt.NDArray],
+    covs_3d: npt.NDArray,
+    split_indices: npt.NDArray,
+    consts: dict[str, npt.NDArray],
+    split_num: int,
+) -> tuple[dict[str, npt.NDArray], int]:
     split_params = {key: val[split_indices] for key, val in params.items()}
 
     key = jax.random.PRNGKey(0)
@@ -89,17 +110,19 @@ def split_gaussians(params, covs_3d, split_indices, consts, split_num):
 
     merged_params = {}
     for key in params:
-        values = [param_dict[key] for param_dict in split_params_tuple]
+        values = [param_dict[key] for param_dict in split_params_tuple]  # type: ignore[index]
         merged_params[key] = np.vstack(values)
 
-    return merged_params, split_indices.sum() * (split_num - 1)
+    return merged_params, split_indices.sum() * (split_num - 1)  # type: ignore[return-value]
 
 
-def _batch_sample_from_covariance(key, means, covariances, num_samples_per_batch=1):
+def _batch_sample_from_covariance(
+    key: jax.Array, means: npt.NDArray, covariances: npt.NDArray, num_samples_per_batch: int = 1
+) -> jax.Array:
     batch_size = means.shape[0]
     keys = jax.random.split(key, batch_size)
 
-    def sample_single(key, mean, cov):
+    def sample_single(key: jax.Array, mean: npt.NDArray, cov: npt.NDArray) -> jax.Array:
         return jax.random.multivariate_normal(key, mean, cov, shape=(num_samples_per_batch,))
 
     return jax.vmap(sample_single)(keys, means, covariances + jnp.eye(3) * 1e-6).transpose(1, 0, 2)

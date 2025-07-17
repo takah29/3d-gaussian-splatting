@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -36,7 +37,7 @@ def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
 
 
 def make_updater(
-    consts: dict[str, int | float | jax.Array],
+    consts: dict[str, Any],
     optimizer: GradientTransformationExtraArgs,
     callback: Callable = lambda _: None,
     *,
@@ -74,16 +75,16 @@ def make_updater(
         view: dict[str, jax.Array],
         target: jax.Array,
         opt_state: OptState,
-    ) -> tuple[Params, dict[str, jax.Array], OptState, jax.Array, dict[str, jax.Array]]:
+    ) -> tuple[Params, OptState, jax.Array, dict[str, jax.Array]]:
         (loss, viewspace_grads), grads = compute_loss_and_grad(params, view, target)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
-        return params, grads, opt_state, loss, viewspace_grads
+        return params, opt_state, loss, viewspace_grads
 
     return jax.jit(update, donate_argnames=("params",)) if jit else update
 
 
-def make_render(consts: dict[str, int | float | jax.Array], *, jit: bool = True) -> Callable:
+def make_render(consts: dict[str, Any], *, jit: bool = True) -> Callable:
     def render(params: dict[str, jax.Array], view: dict[str, jax.Array]) -> jax.Array:
         projected_gaussians = project(params, **view, consts=consts)
 

@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -152,18 +153,20 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def calc_tile_max_gs_num(tile_size, height, width, max_points, tile_max_gs_num_coeff):
+def calc_tile_max_gs_num(
+    tile_size: int, height: int, width: int, max_points: int, tile_max_gs_num_coeff: float
+) -> int:
     n_tiles = (height // tile_size) * (width // tile_size)
     return int(tile_max_gs_num_coeff * max_points / n_tiles)
 
 
 def _init_consts(
     height: int, width: int, max_points: int, tile_max_gs_num_coeff: float, extent: float
-) -> dict[str, int | float | npt.NDArray]:
+) -> dict[str, Any]:
     tile_size = 16
     return {
-        "background": np.array([0.0, 0.0, 0.0]),
-        "img_shape": np.array([height, width]),
+        "background": (0.0, 0.0, 0.0),
+        "img_shape": (height, width),
         "max_points": max_points,
         "extent": extent,
         "pruning_big_gaussian": False,
@@ -182,7 +185,7 @@ def _init_consts(
     }
 
 
-def print_info(params, consts):
+def print_info(params: dict[str, npt.NDArray], consts: dict[str, Any]) -> None:
     print("===== Information =====")
     print("----- params -----")
     for k, v in params.items():
@@ -195,7 +198,7 @@ def print_info(params, consts):
 
 def build_params(
     colmap_data_path: Path, max_points: int, image_scale: float, n_epochs: int
-) -> tuple[dict[str, npt.NDArray], dict[str, int | float | npt.NDArray], npt.NDArray]:
+) -> tuple[dict[str, npt.NDArray], dict[str, Any], ImageViewDataLoader]:
     reconstruction_data, camera_params, image_batch = load_colmap_data(
         colmap_data_path, image_scale
     )

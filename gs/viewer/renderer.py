@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 import pyglm.glm as pglm
 
-from gs.make_update import make_render
+from gs.function_factory import make_render
 from gs.utils import calc_tile_max_gs_num
 
 

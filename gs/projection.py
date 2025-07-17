@@ -19,7 +19,7 @@ def project_point(
 
 def quat_to_rot(quat: jax.Array) -> jax.Array:
     norm = jnp.linalg.norm(quat)
-    quat = jnp.where(norm > 1e-8, quat / norm, quat)
+    quat = jnp.where(norm > 1e-8, quat / norm, quat)  # type: ignore[reportAssignmentType]
     return Rotation.from_quat(quat / norm).as_matrix()
 
 
@@ -69,7 +69,7 @@ def project(
     rot_mat: jax.Array,
     t_vec: jax.Array,
     intrinsic_vec: jax.Array,
-    consts,
+    consts: dict[str, jax.Array],
 ) -> dict[str, jax.Array]:
     # 3D Gaussianの中心点を2D画面に投影するときの座標値を計算
     projected_points, depths = project_point_vmap(params["means3d"], rot_mat, t_vec, intrinsic_vec)

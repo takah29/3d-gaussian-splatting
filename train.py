@@ -1,18 +1,21 @@
 import argparse
 import pickle
 from pathlib import Path
+from typing import Any
 
+import jax
 import numpy as np
-import optax
+import numpy.typing as npt
+import optax  # type: ignore[import-untyped]
 
 from gs.density_control import densify_gaussians, prune_gaussians
-from gs.make_update import get_corrected_params, make_updater
+from gs.function_factory import get_corrected_params, make_updater
 from gs.utils import build_params
 
 
-def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
+def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
     # パラメータを分類するための関数
-    def partition_params(params):
+    def partition_params(params: dict[str, npt.NDArray]) -> dict[str, str]:
         """パラメータを異なるグループに分類"""
         partition = {key: key for key in params}
 
@@ -35,18 +38,23 @@ def get_optimizer(optimizer_class, lr_scale, extent, total_iter):
     }
 
     # multi_transformオプティマイザーを作成
-    optimizer = optax.multi_transform(optimizers, partition_params)
+    optimizer = optax.multi_transform(optimizers, partition_params)  # type: ignore[reportArgumentType]
 
     return optimizer
 
 
-def to_numpy_dict(arr_dict):
+def to_numpy_dict(arr_dict: dict[str, jax.Array]) -> dict[str, np.ndarray]:
     return {key: np.array(val) for key, val in arr_dict.items()}
 
 
-def save_params_pkl(save_pkl_path: Path, params, camera_params, consts):
+def save_params_pkl(
+    save_pkl_path: Path,
+    params: dict[str, npt.NDArray],
+    camera_params: dict[str, npt.NDArray],
+    consts: dict[str, Any],
+) -> None:
     result = {
-        "params": get_corrected_params(params),
+        "params": get_corrected_params(params),  # type: ignore[arg-type]
         "consts": consts,
         "camera_params": camera_params,
     }
@@ -80,7 +88,9 @@ def main() -> None:
     # 初期パラメータの保存
     save_params_pkl(
         save_dirpath / "params_checkpoint_initial.pkl",
-        *(params, image_dataloader.camera_params, consts),
+        params,
+        image_dataloader.camera_params,
+        consts,
     )
 
     optimizer = get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader))
@@ -93,14 +103,16 @@ def main() -> None:
     view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
     for i, (view, target) in enumerate(image_dataloader, start=1):
-        params, grads, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
+        params, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
         print(f"Iter {i}: loss={loss}")
 
         # 途中経過のパラメータを保存
         if i % args.checkpoint_cycle == 0:
             save_params_pkl(
                 save_dirpath / f"params_checkpoint_iter{i:05d}.pkl",
-                *(params, image_dataloader.camera_params, consts),
+                params,
+                image_dataloader.camera_params,
+                consts,
             )
 
         if i <= consts["densify_until_iter"]:
@@ -152,7 +164,9 @@ def main() -> None:
 
     save_params_pkl(
         save_dirpath / "params_final.pkl",
-        *(params, image_dataloader.camera_params, consts),
+        params,
+        image_dataloader.camera_params,
+        consts,
     )
 
 
