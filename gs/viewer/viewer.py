@@ -1,10 +1,8 @@
 import sys
 
 import glfw  # type: ignore[import-untyped]
-import numpy as np
-from scipy.spatial.transform import Rotation
 
-from gs.viewer.camera import CameraBase
+from gs.viewer.camera import Camera
 from gs.viewer.data_manager import DataManager
 from gs.viewer.renderer import GsRendererBase
 
@@ -20,7 +18,7 @@ class Viewer:
 
     def __init__(
         self,
-        camera: CameraBase,
+        camera: Camera,
         data_manager: DataManager,
         initial_index: int,
         window_title: str = "3DGS Viewer",
@@ -45,7 +43,6 @@ class Viewer:
         self.middle_mouse_dragging = False
         self.last_mouse_pos = None
         self.camera_dirty = True  # 再描画が必要かどうかのフラグ
-        self.current_cam_index = 0
 
         # --- 初期化処理の実行 ---
         self._init_glfw()
@@ -94,16 +91,6 @@ class Viewer:
         glfw.swap_interval(1)
         self.update_window_title()
 
-    def _get_camera_state(self, index: int) -> tuple[np.ndarray, Rotation]:
-        """指定インデックスの学習済みカメラ情報を取得し、位置と回転を返す。"""
-        view = self.data_manager.get_camera_param(index)
-        rot_mat_w2c = view["rot_mat"]
-        t_vec_w2c = view["t_vec"]
-        # w2cからc2w(カメラからワールド)への変換
-        c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
-        c2w_position = -c2w_rotation.apply(t_vec_w2c)
-        return c2w_position, c2w_rotation
-
     def load_params(self, index: int) -> None:
         """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
         self.params = self.data_manager.load_data(index)
@@ -121,7 +108,8 @@ class Viewer:
 
     def change_camera_pose(self) -> None:
         """学習済みカメラ視点を切り替える。"""
-        self.camera.position, self.camera.rotation = self._get_camera_state(self.current_cam_index)
+        view = self.data_manager.get_camera_param()
+        self.camera.set_pose_w2c(view["rot_mat"], view["t_vec"])
         self.camera_dirty = True
 
     def _setup_callbacks(self) -> None:

@@ -2,9 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from scipy.spatial.transform import Rotation
-
-from gs.viewer.camera import CameraGl
+from gs.viewer.camera import Camera
 from gs.viewer.data_manager import DataManager
 from gs.viewer.renderer import GsRendererGl
 from gs.viewer.viewer import Viewer
@@ -14,14 +12,8 @@ def create_gl_viewer(pkl_files: list[Path], initial_index: int) -> Viewer:
     data_manager = DataManager.create_for_gldata(pkl_files)
     params = data_manager.load_data(initial_index)
 
-    camera_index = 0
-    view = data_manager.get_camera_param(camera_index)
-    rot_mat_w2c = view["rot_mat"]
-    t_vec_w2c = view["t_vec"]
-    c2w_rotation = Rotation.from_matrix(rot_mat_w2c.T)
-    c2w_position = -c2w_rotation.apply(t_vec_w2c)
-
-    camera = CameraGl(c2w_position, c2w_rotation, view["intrinsic_vec"])
+    view = data_manager.get_camera_param()
+    camera = Camera.create_gl(**view)
     viewer = Viewer(camera, data_manager, initial_index, window_title="OpenGL 3DGS Viewer")
 
     # OpenGLの初期化後に作成する必要があるので作成後にviewerに設定

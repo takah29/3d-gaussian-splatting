@@ -80,11 +80,15 @@ class DataManager:
 
         return self._camera_param_index, len(self._camera_params["rot_mat_batch"])
 
-    def get_camera_param(self, index: int) -> dict[str, npt.NDArray]:
+    def get_camera_param(self, index: int | None = None) -> dict[str, npt.NDArray]:
         """指定インデックスのカメラパラメータを取得"""
         if self._camera_params is None:
             msg = "No data loaded."
             raise ValueError(msg)
+
+        if index is None:
+            index = self._camera_param_index
+
         return {
             "rot_mat": self._camera_params["rot_mat_batch"][index],
             "t_vec": self._camera_params["t_vec_batch"][index],
