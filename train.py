@@ -14,12 +14,14 @@ from gs.utils import build_params
 
 
 def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
-    # パラメータを分類するための関数
-    def partition_params(params: dict[str, npt.NDArray]) -> dict[str, str]:
-        """パラメータを異なるグループに分類"""
-        partition = {key: key for key in params}
-
-        return partition
+    param_labels = {
+        "means3d": "means3d",
+        "quats": "quats",
+        "scales": "scales",
+        "sh_dc": "sh_dc",
+        "sh_rest": "sh_rest",
+        "opacities": "opacities",
+    }
 
     position_lr_scheduler = optax.exponential_decay(
         init_value=1e-4 * extent * lr_scale,
@@ -28,17 +30,16 @@ def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: i
         end_value=1e-6 * extent * lr_scale,
     )
 
-    # 各グループに異なるオプティマイザーを定義
     optimizers = {
         "means3d": optimizer_class(learning_rate=position_lr_scheduler),
-        "colors": optimizer_class(learning_rate=0.001 * lr_scale),
+        "sh_dc": optimizer_class(learning_rate=0.001 * lr_scale),
+        "sh_rest": optimizer_class(learning_rate=0.001 / 20.0 * lr_scale),
         "scales": optimizer_class(learning_rate=0.005 * lr_scale),
         "quats": optimizer_class(learning_rate=0.001 * lr_scale),
         "opacities": optimizer_class(learning_rate=0.05 * lr_scale),
     }
 
-    # multi_transformオプティマイザーを作成
-    optimizer = optax.multi_transform(optimizers, partition_params)  # type: ignore[reportArgumentType]
+    optimizer = optax.multi_transform(optimizers, param_labels)  # type: ignore[reportArgumentType]
 
     return optimizer
 
@@ -102,8 +103,15 @@ def main() -> None:
 
     view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
+    active_sh_degree = 0
     for i, (view, target) in enumerate(image_dataloader, start=1):
-        params, opt_state, loss, viewspace_grads = update(params, view, target, opt_state)
+        if i in (1000, 2000, 3000):
+            active_sh_degree += 1
+            print(f"Active SH degree increased to {active_sh_degree}")
+
+        params, opt_state, loss, viewspace_grads = update(
+            params, view, target, opt_state, active_sh_degree
+        )
         print(f"Iter {i}: loss={loss}")
 
         # 途中経過のパラメータを保存

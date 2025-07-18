@@ -31,7 +31,7 @@ def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
         "means3d": params["means3d"],
         "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
         "scales": jnp.exp(params["scales"]),
-        "colors": jax.nn.sigmoid(params["colors"]),
+        "sh_coeffs": jnp.dstack((params["sh_dc"], params["sh_rest"])),
         "opacities": jax.nn.sigmoid(params["opacities"]),
     }
 
@@ -54,10 +54,15 @@ def make_updater(
         return loss
 
     def loss_fn_for_params(
-        params: dict[str, jax.Array], view: dict[str, jax.Array], target: jax.Array
+        params: dict[str, jax.Array],
+        view: dict[str, jax.Array],
+        target: jax.Array,
+        active_sh_degree: jax.Array,
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         corrected_params = get_corrected_params(params)
-        projected_gaussians = project(corrected_params, **view, consts=consts)
+        projected_gaussians = project(
+            corrected_params, **view, consts=consts, active_sh_degree=active_sh_degree
+        )
 
         # View-Space Gradientsを中間勾配として取得する
         means_2d = projected_gaussians["means_2d"]
@@ -75,8 +80,11 @@ def make_updater(
         view: dict[str, jax.Array],
         target: jax.Array,
         opt_state: OptState,
+        active_sh_degree: int,
     ) -> tuple[Params, OptState, jax.Array, dict[str, jax.Array]]:
-        (loss, viewspace_grads), grads = compute_loss_and_grad(params, view, target)
+        (loss, viewspace_grads), grads = compute_loss_and_grad(
+            params, view, target, active_sh_degree
+        )
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss, viewspace_grads

@@ -102,7 +102,8 @@ def split_gaussians(
                 np.exp(split_params["scales"]) / (consts["split_gaussian_scale"] * split_num)
             ),
             "quats": split_params["quats"],
-            "colors": split_params["colors"],
+            "sh_dc": split_params["sh_dc"],
+            "sh_rest": split_params["sh_rest"],
             "opacities": split_params["opacities"],
         }
         for means_3d in split_means_3d_sampled

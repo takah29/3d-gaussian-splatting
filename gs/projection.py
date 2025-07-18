@@ -22,7 +22,7 @@ SH_C3_6 = -0.5900435899266435
 
 def _calc_sh_basis_function_values(direction: jax.Array) -> jax.Array:
     # Reference: https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/main/cuda_rasterizer/forward.cu
-    x, y, z = direction[:, 0], direction[:, 1], direction[:, 2]
+    x, y, z = direction
     xy = x * y
     yz = y * z
     xz = z * x
@@ -103,7 +103,7 @@ def compute_color_from_sh_switch(
         + 0.5
     )
 
-    return colors.maximum(0.0)
+    return jnp.maximum(0.0, colors)
 
 
 def project_point(
@@ -173,7 +173,16 @@ def project(
     t_vec: jax.Array,
     intrinsic_vec: jax.Array,
     consts: dict[str, jax.Array],
+    active_sh_degree: jax.Array,
 ) -> dict[str, jax.Array]:
+    # 球面調和関数による色計算
+    colors = compute_color_from_sh_switch(
+        params["means3d"],
+        t_vec,
+        params["sh_coeffs"],
+        active_sh_degree,
+    )
+
     # 3D Gaussianの中心点を2D画面に投影するときの座標値を計算
     projected_points, depths = project_point_vmap(params["means3d"], rot_mat, t_vec, intrinsic_vec)
 
@@ -184,12 +193,14 @@ def project(
     covs_2d_raw = to_2dcov_vmap(
         params["means3d"], covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"]
     )
+
+    # 特異行列対策
     covs_2d = covs_2d_raw + jnp.eye(2) * 0.3
 
     return {
         "means_2d": projected_points,
         "covs_2d": covs_2d,
-        "colors": params["colors"],
+        "colors": jax.nn.sigmoid(colors),
         "opacities": params["opacities"],
         "depths": depths,
     }
