@@ -177,9 +177,9 @@ def _init_consts(
         "scale_threshold": 1.0,
         "split_gaussian_scale": 0.8,
         "split_num": 2,
-        "densify_from_iter": 100,
+        "densify_from_iter": 1500,
         "densify_until_iter": 15000,
-        "densification_interval": 100,
+        "densification_interval": 1500,
         "tile_size": tile_size,
         "tile_max_gs_num": calc_tile_max_gs_num(
             tile_size, height, width, max_points, tile_max_gs_num_coeff
