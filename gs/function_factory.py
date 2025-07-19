@@ -92,9 +92,13 @@ def make_updater(
     return jax.jit(update, donate_argnames=("params",)) if jit else update
 
 
-def make_render(consts: dict[str, Any], *, jit: bool = True) -> Callable:
+def make_render(
+    consts: dict[str, Any], active_sh_degree: jax.Array, *, jit: bool = True
+) -> Callable:
     def render(params: dict[str, jax.Array], view: dict[str, jax.Array]) -> jax.Array:
-        projected_gaussians = project(params, **view, consts=consts)
+        projected_gaussians = project(
+            params, **view, consts=consts, active_sh_degree=active_sh_degree
+        )
 
         return rasterize(projected_gaussians, consts)
 

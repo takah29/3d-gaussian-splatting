@@ -85,11 +85,11 @@ sh_computations_vmap = tuple(
 
 def compute_color_from_sh_switch(
     points_3d: jax.Array,
-    camera_pos: jax.Array,
+    t_vec: jax.Array,
     sh_coeffs: jax.Array,  # (N, 3, 16)
     active_sh_degree: jax.Array,
 ) -> jax.Array:
-    directions = points_3d - camera_pos
+    directions = points_3d - t_vec
     directions = directions / jnp.linalg.norm(directions, axis=1, keepdims=True)
     basis_values = calc_sh_basis_function_values_vmap(directions)  # (N, 16)
 
@@ -200,7 +200,7 @@ def project(
     return {
         "means_2d": projected_points,
         "covs_2d": covs_2d,
-        "colors": jax.nn.sigmoid(colors),
+        "colors": colors,
         "opacities": params["opacities"],
         "depths": depths,
     }

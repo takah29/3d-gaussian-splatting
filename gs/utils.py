@@ -10,6 +10,8 @@ from PIL import Image
 from scipy.spatial import cKDTree
 from scipy.special import logit
 
+from gs.projection import SH_C0_0
+
 
 def load_colmap_data(
     colmap_data_path: Path, image_scale: float, *, quatanion: bool = False
@@ -220,7 +222,7 @@ def build_params(
 
     params = {
         "means3d": points_3d,
-        "sh_dc": logit(np.clip(colors, 1e-4, 1.0 - 1e-4))[:, :, None],  # (r, g, b) in sh_deg0
+        "sh_dc": ((colors - 0.5) / SH_C0_0)[:, :, None],  # (r, g, b) in sh_deg0
         "sh_rest": np.zeros((sample_size, 3, 15), dtype=np.float32),
         **_init_gaussian_property(points_3d),
     }

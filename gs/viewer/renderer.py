@@ -66,7 +66,8 @@ class GsRendererJax(GsRendererBase):
         # --- JAX部分の初期化 ---
         self.params = initial_params
         self.consts = consts
-        self.render_fn = make_render(self.consts, jit=True)
+        self.active_sh_degree = 3
+        self.render_fn = make_render(self.consts, active_sh_degree=self.active_sh_degree, jit=True)
 
         # --- ModernGL部分の初期化 ---
         self.program = self.ctx.program(
@@ -139,16 +140,38 @@ class GsRendererGl(GsRendererBase):
     # --- シェーダ定義 ---
     VERTEX_SHADER = """
         #version 430 core
+
+        const float SH_C0_0 = 0.28209479177387814;
+        const float SH_C1_0 = -0.4886025119029199;
+        const float SH_C1_1 = 0.4886025119029199;
+        const float SH_C1_2 = -0.4886025119029199;
+        const float SH_C2_0 = 1.0925484305920792;
+        const float SH_C2_1 = -1.0925484305920792;
+        const float SH_C2_2 = 0.31539156525252005;
+        const float SH_C2_3 = -1.0925484305920792;
+        const float SH_C2_4 = 0.5462742152960396;
+        const float SH_C3_0 = -0.5900435899266435;
+        const float SH_C3_1 = 2.890611442640554;
+        const float SH_C3_2 = -0.4570457994644658;
+        const float SH_C3_3 = 0.3731763325901154;
+        const float SH_C3_4 = -0.4570457994644658;
+        const float SH_C3_5 = 1.445305721320277;
+        const float SH_C3_6 = -0.5900435899266435;
+
         layout(location = 0) in vec2 in_vert;
+
         // SSBO bindings
         layout (std430, binding = 0) buffer gaussian_data { float g_data[]; };
         layout (std430, binding = 1) buffer gaussian_order { int gi[]; };
+
         // Uniforms
-        uniform mat4 view_matrix;
+        uniform mat3 rot_mat;
+        uniform vec3 t_vec;
         uniform mat4 projection_matrix;
         uniform float focal_x;
         uniform float focal_y;
         uniform vec2 u_resolution;
+
         // Outputs to Fragment Shader
         out vec3 pass_color;
         out float pass_alpha;
@@ -164,9 +187,41 @@ class GsRendererGl(GsRendererBase):
             );
         }
 
+        vec3 computeColorFromSH(vec3 direction, float sh_coeff[48]) {
+            float x = direction.x, y = direction.y, z = direction.z;
+            float xx = x * x, yy = y * y, zz = z * z, xy = x * y, yz = y * z, xz = x * z;
+
+            float basis[16];
+            basis[0] = SH_C0_0;
+            basis[1] = SH_C1_0 * y;
+            basis[2] = SH_C1_1 * z;
+            basis[3] = SH_C1_2 * x;
+            basis[4] = SH_C2_0 * xy;
+            basis[5] = SH_C2_1 * yz;
+            basis[6] = SH_C2_2 * (2.0 * zz - xx - yy);
+            basis[7] = SH_C2_3 * xz;
+            basis[8] = SH_C2_4 * (xx - yy);
+            basis[9] = SH_C3_0 * y * (3.0 * xx - yy);
+            basis[10] = SH_C3_1 * xy * z;
+            basis[11] = SH_C3_2 * y * (4.0 * zz - xx - yy);
+            basis[12] = SH_C3_3 * z * (2.0 * zz - 3.0 * xx - 3.0 * yy);
+            basis[13] = SH_C3_4 * x * (4.0 * zz - xx - yy);
+            basis[14] = SH_C3_5 * z * (xx - yy);
+            basis[15] = SH_C3_6 * x * (xx - 3.0 * yy);
+
+            float r = 0.0, g = 0.0, b = 0.0;
+            for (int i = 0; i < 16; i++) {
+                r += sh_coeff[i] * basis[i];
+                g += sh_coeff[i + 16] * basis[i];
+                b += sh_coeff[i + 32] * basis[i];
+            }
+
+            return max(vec3(r, g, b)+0.5, 0.0);
+        }
+
         void main() {
             int instance_idx = gi[gl_InstanceID];
-            int data_dim = 14; // (pos:3, rot:4, scale:3, opacity:1, color:3)
+            int data_dim = 59; // (pos:3, rot_quat:4, scale:3, opacity:1, coeffs:48)
             int offset = instance_idx * data_dim;
 
             vec3 pos_world = vec3(g_data[offset], g_data[offset+1], g_data[offset+2]);
@@ -175,20 +230,28 @@ class GsRendererGl(GsRendererBase):
             );
             vec3 scale = vec3(g_data[offset+7], g_data[offset+8], g_data[offset+9]);
             pass_alpha = g_data[offset+10];
-            pass_color = vec3(g_data[offset+11], g_data[offset+12], g_data[offset+13]);
 
-            vec4 pos_view = view_matrix * vec4(pos_world, 1.0);
+            vec3 pos_view = rot_mat * pos_world + t_vec;
             if (pos_view.z >= -0.2) { // 近すぎるガウシアンは描画しない
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0); // 画面外に飛ばす
                 return;
             }
 
+            vec3 direction = normalize(pos_world-t_vec);
+
+            float sh_coeff[48];
+            int sh_start = offset + 11; // pos:3 + rot:4 + scale:3 + opacity:1 = 11
+            for (int i = 0; i < 48; i++) {
+                sh_coeff[i] = g_data[sh_start + i];
+            }
+
+            pass_color = computeColorFromSH(direction, sh_coeff);
+
             mat3 R = quat_to_rotmat(rot_quat);
             mat3 S = mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
             mat3 cov3D_world = R * S * transpose(S) * transpose(R);
 
-            mat3 W = mat3(view_matrix);
-            mat3 cov3D_view = W * cov3D_world * transpose(W);
+            mat3 cov3D_view = rot_mat * cov3D_world * transpose(rot_mat);
 
             float tan_fovx = 2.0 * atan(u_resolution.x / (2.0 * focal_x));
             float tan_fovy = 2.0 * atan(u_resolution.y / (2.0 * focal_y));
@@ -223,7 +286,7 @@ class GsRendererGl(GsRendererBase):
             float radius = 3.0 * sqrt(lambda1);
 
             vec2 quad_radius_ndc = radius / u_resolution * 2.0;
-            vec4 pos_clip = projection_matrix * pos_view;
+            vec4 pos_clip = projection_matrix * vec4(pos_view, 1.0);
             gl_Position = pos_clip / pos_clip.w + vec4(in_vert * quad_radius_ndc, 0.0, 0.0);
             pass_coordxy = in_vert * radius;
         }
@@ -288,12 +351,9 @@ class GsRendererGl(GsRendererBase):
         aspect = resolution_wh[0] / resolution_wh[1]
         projection_matrix = pglm.perspective(fovy, aspect, 0.2, 1000.0)
 
-        view_matrix = np.identity(4, dtype="f4")
-        view_matrix[:3, :3] = view["rot_mat"]
-        view_matrix[:3, 3] = view["t_vec"]
-
         # Uniform変数をシェーダに送信
-        self.program["view_matrix"].write(pglm.mat4(view_matrix))
+        self.program["rot_mat"].write(pglm.mat3(view["rot_mat"]))
+        self.program["t_vec"].write(pglm.vec3(view["t_vec"]))
         self.program["projection_matrix"].write(projection_matrix)
         self.program["focal_x"].value = focal_lengths[0]
         self.program["focal_y"].value = focal_lengths[1]
@@ -302,7 +362,7 @@ class GsRendererGl(GsRendererBase):
         # 描画処理
         self.ctx.clear(0.0, 0.0, 0.0, 0.0)
         if self.num_gaussians > 0:
-            self._sort_and_update_gaussians(view_matrix)
+            self._sort_and_update_gaussians(view["rot_mat"], view["t_vec"])
             self.vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=self.num_gaussians)
 
     def update_gaussian_data(self, params: dict) -> None:
@@ -342,38 +402,35 @@ class GsRendererGl(GsRendererBase):
         self.program.release()
         self.ctx.release()
 
-    def update_sorted_indices(self, sorted_indices: np.ndarray) -> None:
+    def update_sorted_indices(self, sorted_indices: npt.NDArray) -> None:
         """ソート済みインデックスのSSBOを更新する。"""
         if self.ssbo_indices:
             self.ssbo_indices.write(sorted_indices.astype("i4").tobytes())
 
-    def _sort_and_update_gaussians(self, view_matrix: np.ndarray) -> None:
+    def _sort_and_update_gaussians(self, rot_mat: npt.NDArray, t_vec: npt.NDArray) -> None:
         """ガウシアンをソートし、レンダラのインデックスバッファを更新する。"""
-        sorted_indices_jax = self.sorter(self.means3d_jax, jnp.array(view_matrix))
+        sorted_indices_jax = self.sorter(self.means3d_jax, jnp.asarray(rot_mat), jnp.asarray(t_vec))
         self.update_sorted_indices(np.asarray(sorted_indices_jax))
 
     @staticmethod
-    def _flatten_gaussian_data(params: dict) -> np.ndarray:
+    def _flatten_gaussian_data(params: dict) -> npt.NDArray:
         """シェーダに渡すためにガウシアンデータをフラット化する。"""
-        if "colors" not in params:
-            msg = "The provided .pkl file does not contain the required 'colors' key."
-            raise KeyError(msg)
-
         return np.concatenate(
             [
                 params["means3d"].astype("f4"),
                 params["quats"].astype("f4"),
                 params["scales"].astype("f4"),
                 params["opacities"].astype("f4"),
-                params["colors"].astype("f4"),
+                params["sh_coeffs"].reshape(-1, 3 * 16).astype("f4"),
             ],
             axis=1,
         ).ravel()
 
     @staticmethod
-    def _get_sorted_indices_jax(means3d_jax: jax.Array, view_matrix_jax: jax.Array) -> jax.Array:
+    def _get_sorted_indices_jax(
+        means3d_jax: jax.Array, rot_mat: jax.Array, t_vec: jax.Array
+    ) -> jax.Array:
         """JAXを使用して、カメラ視点からの深度に基づいてガウシアンをソートする。"""
-        means_homo = jnp.hstack([means3d_jax, jnp.ones((means3d_jax.shape[0], 1))])
-        means_view = means_homo @ view_matrix_jax.T
+        means_view = means3d_jax @ rot_mat.T + t_vec
         depths = means_view[:, 2]
         return jnp.argsort(depths)
