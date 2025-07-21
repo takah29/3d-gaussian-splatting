@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import optax  # type: ignore[import-untyped]
 
-from gs.density_control import densify_gaussians, prune_gaussians
+from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import get_corrected_params, make_updater
 from gs.utils import build_params
 

@@ -10,7 +10,7 @@ from PIL import Image
 from scipy.spatial import cKDTree
 from scipy.special import logit
 
-from gs.projection import SH_C0_0
+from gs.core.projection import SH_C0_0
 
 
 def load_colmap_data(

@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
 
-from gs.loss_function import gs_loss
-from gs.projection import project
-from gs.rasterization import rasterize
+from gs.core.loss_function import gs_loss
+from gs.core.projection import project
+from gs.core.rasterization import rasterize
 
 
 class DataLogger:

@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy.special import expit
 
-from gs.projection import compute_cov_vmap
+from gs.core.projection import compute_cov_vmap
 
 
 def prune_gaussians(
