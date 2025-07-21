@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -41,15 +41,13 @@ class GsConfig:
     tile_size: int
     tile_max_gs_num_factor: int
 
-    img_shape: tuple[int, int] = field(init=False)
-    extent: float = field(init=False)
-    tile_max_gs_num: int = field(init=False)
+    img_shape: tuple[int, int] = field(init=False)  # 画像の高さと幅
+    extent: float = field(init=False)  # シーンの大きさ
+    tile_max_gs_num: int = field(init=False)  # タイルあたりの最大ガウシアン数
 
-    def __post_init__(self) -> None:
-        """初期化後の処理。派生パラメータを計算し、設定を検証する。"""
-        self._validate_config()
-
-    def calc_derived_params(self, image_batch: npt.NDArray, camera_params: npt.NDArray) -> None:
+    def derive_additional_property(
+        self, image_batch: npt.NDArray, camera_params: dict[str, npt.NDArray]
+    ) -> None:
         self.img_shape = image_batch.shape[1:3]
         self.extent = (
             np.linalg.norm(
@@ -59,9 +57,9 @@ class GsConfig:
         )
         self.tile_max_gs_num = self._calc_tile_max_gs_num(*self.img_shape)
 
-    def display_parameters(self) -> None:
+    def display(self) -> None:
         """設定パラメータを表示する。"""
-        print("----- Gaussian Splatting Configuration -----")
+        print("===== Configuration =====")
         max_len = max(len(field.name) for field in self.__dataclass_fields__.values())
 
         for field_info in self.__dataclass_fields__.values():
@@ -69,7 +67,7 @@ class GsConfig:
             value = getattr(self, name)
 
             print(f"{name:<{max_len}} : {value!s}")
-        print("--------------------------------------------")
+        print("=========================")
 
     def to_dict(self) -> dict[str, Any]:
         """設定を辞書形式で取得する。
@@ -77,21 +75,7 @@ class GsConfig:
         Returns:
             設定パラメータの辞書
         """
-        return {
-            "background": self.background,
-            "max_points": self.max_gaussians,
-            "pruning_big_gaussian": self.pruning_big_gaussian,
-            "eps_prune_alpha": self.eps_prune_alpha,
-            "tau_pos": self.tau_pos,
-            "scale_threshold": self.scale_threshold,
-            "split_gaussian_scale": self.split_gaussian_scale,
-            "split_num": self.split_num,
-            "densify_from_iter": self.densify_from_iter,
-            "densify_until_iter": self.densify_until_iter,
-            "densification_interval": self.densification_interval,
-            "tile_size": self.tile_size,
-            "tile_max_gs_num_factor": self.tile_max_gs_num_factor,
-        }
+        return asdict(self)
 
     def save_to_json(self, json_path: Path) -> None:
         """設定をJSONファイルに保存する。
@@ -104,7 +88,7 @@ class GsConfig:
 
     def _calc_tile_max_gs_num(self, height: int, width: int) -> int:
         n_tiles = (height // self.tile_size) * (width // self.tile_size)
-        return int(self.tile_max_gs_num_factor * self.max_points / n_tiles)
+        return int(self.tile_max_gs_num_factor * self.max_gaussians / n_tiles)
 
     @classmethod
     def from_json_file(cls, json_path: Path) -> "GsConfig":

@@ -1,6 +1,6 @@
 {
   "background": [0.0, 0.0, 0.0],
-  "max_points": 200000,
+  "max_gaussians": 200000,
   "pruning_big_gaussian": false,
   "eps_prune_alpha": 0.005,
   "tau_pos": 1e-6,

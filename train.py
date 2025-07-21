@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import optax  # type: ignore[import-untyped]
 
+from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import get_corrected_params, make_updater
 from gs.utils import build_params
@@ -65,7 +66,7 @@ def save_params_pkl(
         pickle.dump(result, f)
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "colmap_data_path",
@@ -80,14 +81,27 @@ def main() -> None:
         help="output directory",
     )
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
-    parser.add_argument("-c", "--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
-    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
+    parser.add_argument(
+        "-c",
+        "--config_filepath",
+        type=Path,
+        default=(Path(__file__).parent / "config" / "default.json").resolve(),
+        help="path to the config file",
+    )
+    parser.add_argument("--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
     parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     args = parser.parse_args()
 
-    params, consts, image_dataloader = build_params(
-        args.colmap_data_path, args.max_points, args.image_scale, args.n_epochs
+    gs_config = GsConfig.from_json_file(args.config_filepath)
+    params, image_dataloader = build_params(
+        args.colmap_data_path, gs_config, args.image_scale, args.n_epochs
     )
+    gs_config.derive_additional_property(
+        image_batch=image_dataloader.image_batch,
+        camera_params=image_dataloader.camera_params,
+    )
+    gs_config.display()
+    consts = gs_config.to_dict()
 
     # パラメータの保存先
     save_dir = args.output.resolve()
@@ -101,7 +115,7 @@ def main() -> None:
         consts,
     )
 
-    optimizer = get_optimizer(optax.adam, 1.0, consts["extent"], len(image_dataloader))
+    optimizer = get_optimizer(optax.adam, 1.0, gs_config.extent, len(image_dataloader))
     opt_state = optimizer.init(params)
 
     # logger = DataLogger(save_dirpath / "progress")
@@ -111,6 +125,7 @@ def main() -> None:
     view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
     active_sh_degree = 0
+
     for i, (view, target) in enumerate(image_dataloader, start=1):
         if i in (1000, 2000, 3000):
             active_sh_degree += 1

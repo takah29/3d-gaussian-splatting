@@ -8,7 +8,6 @@ import numpy.typing as npt
 import pyglm.glm as pglm
 
 from gs.function_factory import make_render
-from gs.utils import calc_tile_max_gs_num
 
 
 class GsRendererBase(ABC):
@@ -75,14 +74,7 @@ class GsRendererJax(GsRendererBase):
         )
 
         # JAX版特有のレンダリング設定
-        self.tile_max_gs_num_coeff = 25.0
-        self.consts["tile_max_gs_num"] = calc_tile_max_gs_num(
-            self.consts["tile_size"],
-            self.consts["img_shape"][0],
-            self.consts["img_shape"][1],
-            self.consts["max_points"],
-            self.tile_max_gs_num_coeff,
-        )
+        self.consts["tile_max_gs_num"] *= 3  # 学習時よりタイルあたりのガウシアン数を増やす
 
         width, height = self.consts["img_shape"][::-1]
         self.image_texture = self.ctx.texture((width, height), 3, dtype="f4")

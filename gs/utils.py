@@ -1,8 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
-import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
 import pycolmap
@@ -10,6 +8,7 @@ from PIL import Image
 from scipy.spatial import cKDTree
 from scipy.special import logit
 
+from gs.config import GsConfig
 from gs.core.projection import SH_C0_0
 
 
@@ -97,6 +96,9 @@ class ImageViewDataLoader:
         *,
         shuffle: bool = True,
     ) -> None:
+        self.image_batch = image_batch
+        self.camera_params = camera_params
+
         view_list = [
             {"rot_mat": rot_mat, "t_vec": t_vec, "intrinsic_vec": intrinsic}
             for rot_mat, t_vec, intrinsic in zip(
@@ -106,15 +108,14 @@ class ImageViewDataLoader:
                 strict=True,
             )
         ]
-        self.camera_params = camera_params
         self.data = list(zip(view_list, image_batch, strict=True))
         self.shuffle = shuffle
-        self.num_epochs = n_epochs
+        self.n_epochs = n_epochs
         self.seed = seed
         self.rng = np.random.RandomState(seed)
 
     def __iter__(self) -> Iterator[tuple[dict[str, npt.NDArray], npt.NDArray]]:
-        for epoch in range(self.num_epochs):
+        for epoch in range(self.n_epochs):
             # エポックごとに新しいシードを設定
             epoch_rng = np.random.RandomState(self.seed + epoch)
 
@@ -126,7 +127,7 @@ class ImageViewDataLoader:
                 yield self.data[idx]
 
     def __len__(self) -> int:
-        return len(self.data) * self.num_epochs
+        return len(self.data) * self.n_epochs
 
 
 def _compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
@@ -155,52 +156,16 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def calc_tile_max_gs_num(
-    tile_size: int, height: int, width: int, max_points: int, tile_max_gs_num_coeff: float
-) -> int:
-    n_tiles = (height // tile_size) * (width // tile_size)
-    return int(tile_max_gs_num_coeff * max_points / n_tiles)
-
-
-def _init_consts(
-    height: int, width: int, max_points: int, tile_max_gs_num_coeff: float, extent: float
-) -> dict[str, Any]:
-    tile_size = 16
-    return {
-        "background": (0.0, 0.0, 0.0),
-        "img_shape": (height, width),
-        "max_points": max_points,
-        "extent": extent,
-        "pruning_big_gaussian": False,
-        "eps_prune_alpha": 0.005,
-        "tau_pos": 1e-6,
-        "scale_threshold": 1.0,
-        "split_gaussian_scale": 0.8,
-        "split_num": 2,
-        "densify_from_iter": 1500,
-        "densify_until_iter": 15000,
-        "densification_interval": 1500,
-        "tile_size": tile_size,
-        "tile_max_gs_num": calc_tile_max_gs_num(
-            tile_size, height, width, max_points, tile_max_gs_num_coeff
-        ),
-    }
-
-
-def print_info(params: dict[str, npt.NDArray], consts: dict[str, Any]) -> None:
-    print("===== Information =====")
-    print("----- params -----")
+def print_info(params: dict[str, npt.NDArray]) -> None:
+    print("===== params =====")
     for k, v in params.items():
         print(f"{k}: {v.shape}")
-    print("----- consts -----")
-    for k, v in consts.items():
-        print(f"{k}: {v}")
-    print("============================")
+    print("==================")
 
 
 def build_params(
-    colmap_data_path: Path, max_points: int, image_scale: float, n_epochs: int
-) -> tuple[dict[str, npt.NDArray], dict[str, Any], ImageViewDataLoader]:
+    colmap_data_path: Path, gs_config: GsConfig, image_scale: float, n_epochs: int
+) -> tuple[dict[str, npt.NDArray], ImageViewDataLoader]:
     reconstruction_data, camera_params, image_batch = load_colmap_data(
         colmap_data_path, image_scale
     )
@@ -212,7 +177,7 @@ def build_params(
     colors = reconstruction_data["colors"]
 
     total_points = len(points_3d)
-    sample_size = min(max_points, total_points)
+    sample_size = min(gs_config.max_gaussians, total_points)
     sampled_indices = np.random.default_rng(123).choice(
         total_points, size=sample_size, replace=False
     )
@@ -227,16 +192,6 @@ def build_params(
         **_init_gaussian_property(points_3d),
     }
 
-    height, width = image_batch.shape[1:3]
-    extent = (
-        jnp.linalg.norm(
-            camera_params["t_vec_batch"] - camera_params["t_vec_batch"].mean(axis=0), axis=1
-        ).max()
-        * 1.1
-    )
-    tile_max_gs_num_coeff = 7.0
-    consts = _init_consts(height, width, max_points, tile_max_gs_num_coeff, extent)
+    print_info(params)
 
-    print_info(params, consts)
-
-    return params, consts, image_dataloader
+    return params, image_dataloader
