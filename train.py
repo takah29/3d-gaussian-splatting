@@ -11,7 +11,7 @@ import optax  # type: ignore[import-untyped]
 from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import get_corrected_params, make_updater
-from gs.utils import build_params
+from gs.helper import build_params
 
 
 def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
