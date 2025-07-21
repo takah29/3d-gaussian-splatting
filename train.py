@@ -72,10 +72,17 @@ def main() -> None:
         type=Path,
         help="path to the colmap dataset (must contain 'images' and 'sparse' directories)",
     )
-    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
-    parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=(Path(__file__).parent / "output").resolve(),
+        help="output directory",
+    )
     parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     parser.add_argument("-c", "--checkpoint_cycle", type=int, default=500, help="checkpoint cycle")
+    parser.add_argument("--max_points", type=int, default=200000, help="max of gaussians")
+    parser.add_argument("--image_scale", type=float, default=1.0, help="image scale")
     args = parser.parse_args()
 
     params, consts, image_dataloader = build_params(
@@ -83,12 +90,12 @@ def main() -> None:
     )
 
     # パラメータの保存先
-    save_dirpath = Path(__file__).parent / "output"
-    save_dirpath.mkdir(parents=True, exist_ok=True)
+    save_dir = args.output.resolve()
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     # 初期パラメータの保存
     save_params_pkl(
-        save_dirpath / "params_checkpoint_initial.pkl",
+        save_dir / "params_checkpoint_initial.pkl",
         params,
         image_dataloader.camera_params,
         consts,
@@ -117,7 +124,7 @@ def main() -> None:
         # 途中経過のパラメータを保存
         if i % args.checkpoint_cycle == 0:
             save_params_pkl(
-                save_dirpath / f"params_checkpoint_iter{i:05d}.pkl",
+                save_dir / f"params_checkpoint_iter{i:05d}.pkl",
                 params,
                 image_dataloader.camera_params,
                 consts,
@@ -171,7 +178,7 @@ def main() -> None:
             opt_state = optimizer.init(params)
 
     save_params_pkl(
-        save_dirpath / "params_final.pkl",
+        save_dir / "params_final.pkl",
         params,
         image_dataloader.camera_params,
         consts,
