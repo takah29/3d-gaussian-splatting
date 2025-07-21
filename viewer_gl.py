@@ -53,6 +53,7 @@ def main() -> None:
         initial_index = 0
 
     viewer = create_gl_viewer(pkl_files, initial_index)
+    viewer.help_messege()
     viewer.run()
 
 

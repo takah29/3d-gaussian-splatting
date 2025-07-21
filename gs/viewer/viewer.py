@@ -218,3 +218,20 @@ class Viewer:
         """マウスホイールのスクロールイベントを処理する。"""
         self.camera.zoom(yoffset, self.MOUSE_SENSITIVITY_ZOOM)
         self.camera_dirty = True
+
+    @staticmethod
+    def help_messege() -> None:
+        """ヘルプメッセージを表示する。"""
+        print(
+            f"{' Help ':=^30}\n"
+            "Arrow Key:\n"
+            "Up/Down: Change dataset\n"
+            "Left/Right: Change camera pose\n"
+            "\n"
+            "Mouse Button:\n"
+            "Left Drag: Rotate\n"
+            "Right Drag: Pan\n"
+            "Middle Drag: Roll\n"
+            "Scroll: Forward/Backward\n"
+            f"{'=' * 30}"
+        )

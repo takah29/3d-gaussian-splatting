@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+import optax  # type: ignore[import-untyped]
 from scipy.special import logit
 
 from gs.config import GsConfig
@@ -60,3 +61,34 @@ def build_params(
     }
 
     return params, image_dataloader
+
+
+def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
+    param_labels = {
+        "means3d": "means3d",
+        "quats": "quats",
+        "scales": "scales",
+        "sh_dc": "sh_dc",
+        "sh_rest": "sh_rest",
+        "opacities": "opacities",
+    }
+
+    position_lr_scheduler = optax.exponential_decay(
+        init_value=1e-4 * extent * lr_scale,
+        transition_steps=total_iter,
+        decay_rate=0.01,
+        end_value=1e-6 * extent * lr_scale,
+    )
+
+    optimizers = {
+        "means3d": optimizer_class(learning_rate=position_lr_scheduler),
+        "sh_dc": optimizer_class(learning_rate=0.001 * lr_scale),
+        "sh_rest": optimizer_class(learning_rate=0.001 / 20.0 * lr_scale),
+        "scales": optimizer_class(learning_rate=0.005 * lr_scale),
+        "quats": optimizer_class(learning_rate=0.001 * lr_scale),
+        "opacities": optimizer_class(learning_rate=0.05 * lr_scale),
+    }
+
+    optimizer = optax.multi_transform(optimizers, param_labels)  # type: ignore[reportArgumentType]
+
+    return optimizer

@@ -1,69 +1,14 @@
 import argparse
-import pickle
 from pathlib import Path
-from typing import Any
 
-import jax
 import numpy as np
-import numpy.typing as npt
 import optax  # type: ignore[import-untyped]
 
 from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
-from gs.function_factory import get_corrected_params, make_updater
-from gs.helper import build_params
-
-
-def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
-    param_labels = {
-        "means3d": "means3d",
-        "quats": "quats",
-        "scales": "scales",
-        "sh_dc": "sh_dc",
-        "sh_rest": "sh_rest",
-        "opacities": "opacities",
-    }
-
-    position_lr_scheduler = optax.exponential_decay(
-        init_value=1e-4 * extent * lr_scale,
-        transition_steps=total_iter,
-        decay_rate=0.01,
-        end_value=1e-6 * extent * lr_scale,
-    )
-
-    optimizers = {
-        "means3d": optimizer_class(learning_rate=position_lr_scheduler),
-        "sh_dc": optimizer_class(learning_rate=0.001 * lr_scale),
-        "sh_rest": optimizer_class(learning_rate=0.001 / 20.0 * lr_scale),
-        "scales": optimizer_class(learning_rate=0.005 * lr_scale),
-        "quats": optimizer_class(learning_rate=0.001 * lr_scale),
-        "opacities": optimizer_class(learning_rate=0.05 * lr_scale),
-    }
-
-    optimizer = optax.multi_transform(optimizers, param_labels)  # type: ignore[reportArgumentType]
-
-    return optimizer
-
-
-def to_numpy_dict(arr_dict: dict[str, jax.Array]) -> dict[str, np.ndarray]:
-    return {key: np.array(val) for key, val in arr_dict.items()}
-
-
-def save_params_pkl(
-    save_pkl_path: Path,
-    params: dict[str, npt.NDArray],
-    camera_params: dict[str, npt.NDArray],
-    consts: dict[str, Any],
-) -> None:
-    result = {
-        "params": get_corrected_params(params),  # type: ignore[arg-type]
-        "consts": consts,
-        "camera_params": camera_params,
-    }
-    result = {key: to_numpy_dict(val) for key, val in result.items()}
-
-    with save_pkl_path.open("wb") as f:
-        pickle.dump(result, f)
+from gs.function_factory import make_updater
+from gs.helper import build_params, get_optimizer
+from gs.utils import save_params_pkl, to_numpy_dict
 
 
 def main() -> None:  # noqa: PLR0915

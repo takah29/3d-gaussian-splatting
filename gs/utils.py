@@ -1,6 +1,11 @@
+import pickle
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
+import jax
+import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import pycolmap
@@ -136,3 +141,47 @@ def compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
     nearest_point_distances = distances[:, 1:].ravel()  # type: ignore[index]
 
     return nearest_point_distances
+
+
+def save_params_pkl(
+    save_pkl_path: Path,
+    params: dict[str, npt.NDArray],
+    camera_params: dict[str, npt.NDArray],
+    consts: dict[str, Any],
+) -> None:
+    result = {
+        "params": get_corrected_params(params),  # type: ignore[arg-type]
+        "consts": consts,
+        "camera_params": camera_params,
+    }
+    result = {key: to_numpy_dict(val) for key, val in result.items()}
+
+    with save_pkl_path.open("wb") as f:
+        pickle.dump(result, f)
+
+
+def to_numpy_dict(arr_dict: dict[str, jax.Array]) -> dict[str, np.ndarray]:
+    return {key: np.array(val) for key, val in arr_dict.items()}
+
+
+class DataLogger:
+    def __init__(self, save_path: Path) -> None:
+        self.count = 0
+        self.save_path = save_path
+
+        self.save_path.mkdir(parents=True, exist_ok=True)
+
+    def __call__(self, image: jax.Array) -> None:
+        plt.imsave(self.save_path / f"output_{self.count:05d}.png", image.clip(0, 1))
+        self.count += 1
+
+
+def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    """パラメータを補正"""
+    return {
+        "means3d": params["means3d"],
+        "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
+        "scales": jnp.exp(params["scales"]),
+        "sh_coeffs": jnp.dstack((params["sh_dc"], params["sh_rest"])),
+        "opacities": jax.nn.sigmoid(params["opacities"]),
+    }
