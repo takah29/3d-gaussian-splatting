@@ -1,0 +1,15 @@
+{
+  "background": [0.0, 0.0, 0.0],
+  "max_points": 200000,
+  "pruning_big_gaussian": false,
+  "eps_prune_alpha": 0.005,
+  "tau_pos": 1e-6,
+  "scale_threshold": 1.0,
+  "split_gaussian_scale": 0.8,
+  "split_num": 2,
+  "densify_from_iter": 1500,
+  "densify_until_iter": 15000,
+  "densification_interval": 1500,
+  "tile_size": 16,
+  "tile_max_gs_num_factor": 7.0
+}
