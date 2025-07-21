@@ -25,10 +25,10 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
 
 
 def print_info(params: dict[str, npt.NDArray]) -> None:
-    print("===== params =====")
+    print(f"{' params ':=^40}")
     for k, v in params.items():
         print(f"{k}: {v.shape}")
-    print("==================")
+    print(f"{'=' * 40}")
 
 
 def build_params(

@@ -7,7 +7,7 @@ import optax  # type: ignore[import-untyped]
 from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import make_updater
-from gs.helper import build_params, get_optimizer
+from gs.helper import build_params, get_optimizer, print_info
 from gs.utils import save_params_pkl, to_numpy_dict
 
 
@@ -41,6 +41,8 @@ def main() -> None:  # noqa: PLR0915
     params, image_dataloader = build_params(
         args.colmap_data_path, gs_config, args.image_scale, args.n_epochs
     )
+    print_info(params)
+
     gs_config.derive_additional_property(
         image_batch=image_dataloader.image_batch,
         camera_params=image_dataloader.camera_params,

@@ -204,7 +204,7 @@ class Viewer:
             return
 
         dx, dy = xpos - self.last_mouse_pos[0], ypos - self.last_mouse_pos[1]
-        if self.left_mouse_dragging:  # 左ドラッグでオービット
+        if self.left_mouse_dragging:  # 左ドラッグで回転
             self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ORBIT)
         if self.right_mouse_dragging:  # 右ドラッグでパン
             self.camera.pan(dx, dy, self.MOUSE_SENSITIVITY_PAN)

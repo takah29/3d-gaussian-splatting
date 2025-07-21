@@ -1,39 +1,14 @@
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import jax
-import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
 
 from gs.core.loss_function import gs_loss
 from gs.core.projection import project
 from gs.core.rasterization import rasterize
-
-
-class DataLogger:
-    def __init__(self, save_path: Path) -> None:
-        self.count = 0
-        self.save_path = save_path
-
-        self.save_path.mkdir(parents=True, exist_ok=True)
-
-    def __call__(self, image: jax.Array) -> None:
-        plt.imsave(self.save_path / f"output_{self.count:05d}.png", image.clip(0, 1))
-        self.count += 1
-
-
-def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
-    """パラメータを補正"""
-    return {
-        "means3d": params["means3d"],
-        "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
-        "scales": jnp.exp(params["scales"]),
-        "sh_coeffs": jnp.dstack((params["sh_dc"], params["sh_rest"])),
-        "opacities": jax.nn.sigmoid(params["opacities"]),
-    }
+from gs.utils import get_corrected_params
 
 
 def make_updater(
