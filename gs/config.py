@@ -49,7 +49,7 @@ class GsConfig:
         self, image_batch: npt.NDArray, camera_params: dict[str, npt.NDArray]
     ) -> None:
         self.img_shape = image_batch.shape[1:3]
-        self.extent = (
+        self.extent = float(
             np.linalg.norm(
                 camera_params["t_vec_batch"] - camera_params["t_vec_batch"].mean(axis=0), axis=1
             ).max()
@@ -77,7 +77,7 @@ class GsConfig:
         """
         return asdict(self)
 
-    def save_to_json(self, json_path: Path) -> None:
+    def to_json_file(self, json_path: Path) -> None:
         """設定をJSONファイルに保存する。
 
         Args:

@@ -12,6 +12,8 @@ import pycolmap
 from PIL import Image
 from scipy.spatial import cKDTree
 
+from gs.config import GsConfig
+
 
 def load_colmap_data(
     colmap_data_path: Path, image_scale: float, *, quatanion: bool = False
@@ -160,7 +162,23 @@ def save_params_pkl(
         pickle.dump(result, f)
 
 
-def to_numpy_dict(arr_dict: dict[str, jax.Array]) -> dict[str, np.ndarray]:
+def save_params(
+    save_path: Path,
+    params: dict[str, Any],
+    camera_params: dict[str, Any],
+    gs_config: GsConfig,
+) -> None:
+    save_path.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        save_path / "params", allow_pickle=False, **to_numpy_dict(get_corrected_params(params))
+    )
+    np.savez_compressed(
+        save_path / "camera_params", allow_pickle=False, **to_numpy_dict(camera_params)
+    )
+    gs_config.to_json_file(save_path / "config.json")
+
+
+def to_numpy_dict(arr_dict: dict[str, Any]) -> dict[str, np.ndarray]:
     return {key: np.array(val) for key, val in arr_dict.items()}
 
 
@@ -176,7 +194,7 @@ class DataLogger:
         self.count += 1
 
 
-def get_corrected_params(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
+def get_corrected_params(params: dict[str, Any]) -> dict[str, jax.Array]:
     """パラメータを補正"""
     return {
         "means3d": params["means3d"],

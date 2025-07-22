@@ -1,4 +1,4 @@
-import pickle
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -46,11 +46,11 @@ class DataManager:
 
     def __init__(
         self,
-        pkl_files: list[Path],
+        params_dirs: list[Path],
         post_process: PostProcess | None = None,
     ) -> None:
         # params(ガウシアンのデータ)用変数
-        self._pkl_files = pkl_files
+        self._params_dirs = params_dirs
         self._params_cache: dict[int, Any] = {}
         self._current_data_index = 0
 
@@ -66,11 +66,11 @@ class DataManager:
 
     def get_current_filename(self) -> str:
         """現在のファイル名を取得"""
-        return self._pkl_files[self._current_data_index].name
+        return self._params_dirs[self._current_data_index].name
 
     def get_current_data_index(self) -> tuple[int, int]:
         """現在のデータインデックスを取得"""
-        return self._current_data_index, len(self._pkl_files)
+        return self._current_data_index, len(self._params_dirs)
 
     def get_current_camera_param_index(self) -> tuple[int, int]:
         """現在のカメラパラメータのインデックス"""
@@ -104,7 +104,7 @@ class DataManager:
 
     def move_data_index(self, step: int) -> int:
         """現在のインデックスをstep分移動させる"""
-        num_files = len(self._pkl_files)
+        num_files = len(self._params_dirs)
         self._current_data_index = (self._current_data_index + step + num_files) % num_files
         return self._current_data_index
 
@@ -123,34 +123,36 @@ class DataManager:
         if index in self._params_cache:
             return self._params_cache[index]
 
-        filepath = self._pkl_files[index]
-        print(f"Loading from disk: {filepath.name} ...", end="", flush=True)
+        params_dir = self._params_dirs[index]
+        print(f"Loading from disk: {params_dir.name} ...", end="", flush=True)
         try:
-            with filepath.open("rb") as f:
-                data = pickle.load(f)  # noqa: S301
+            params = dict(np.load(params_dir / "params.npz"))
 
             # 必要に応じてロード後の後処理を実行
             if self._post_process:
-                data["params"] = self._post_process.params_to_gldata(data["params"])
+                params = self._post_process.params_to_gldata(params)
 
             if len(self._params_cache) == 0:
+                camera_params = dict(np.load(params_dir / "camera_params.npz"))
                 if self._post_process:
                     self._camera_params = (
-                        self._post_process.camera_params_to_gldata(data["camera_params"])
+                        self._post_process.camera_params_to_gldata(camera_params)
                         if self._post_process
-                        else data["camera_params"]
+                        else camera_params
                     )
                 else:
-                    self._camera_params = data["camera_params"]
-                self._consts = data["consts"]
-            self._params_cache[index] = data["params"]
+                    self._camera_params = camera_params
+                with (params_dir / "config.json").open(encoding="utf-8") as f:
+                    self._consts = json.load(f)
+
+            self._params_cache[index] = params
             self._current_data_index = index
 
             print(" Done.")
-            return data["params"]
+            return params
 
         except Exception as e:  # noqa: BLE001
-            print(f" Error loading {filepath.name}: {e}", file=sys.stderr)
+            print(f" Error loading {params_dir.name}: {e}", file=sys.stderr)
             return None
 
     @staticmethod

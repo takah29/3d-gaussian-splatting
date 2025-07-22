@@ -8,7 +8,7 @@ from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import make_updater
 from gs.helper import build_params, get_optimizer, print_info
-from gs.utils import save_params_pkl, to_numpy_dict
+from gs.utils import save_params, to_numpy_dict
 
 
 def main() -> None:  # noqa: PLR0915
@@ -55,11 +55,11 @@ def main() -> None:  # noqa: PLR0915
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # 初期パラメータの保存
-    save_params_pkl(
-        save_dir / "params_checkpoint_initial.pkl",
+    save_params(
+        save_dir / "params_checkpoint_initial",
         params,
         image_dataloader.camera_params,
-        consts,
+        gs_config,
     )
 
     optimizer = get_optimizer(optax.adam, 1.0, gs_config.extent, len(image_dataloader))
@@ -85,11 +85,11 @@ def main() -> None:  # noqa: PLR0915
 
         # 途中経過のパラメータを保存
         if i % args.checkpoint_cycle == 0:
-            save_params_pkl(
-                save_dir / f"params_checkpoint_iter{i:05d}.pkl",
+            save_params(
+                save_dir / f"params_checkpoint_iter{i:05d}",
                 params,
                 image_dataloader.camera_params,
-                consts,
+                gs_config,
             )
 
         if i <= consts["densify_until_iter"]:
@@ -139,11 +139,11 @@ def main() -> None:  # noqa: PLR0915
             # paramsのデータ数が変わるのでoptimizerを初期化する
             opt_state = optimizer.init(params)
 
-    save_params_pkl(
-        save_dir / "params_final.pkl",
+    save_params(
+        save_dir / "params_final",
         params,
         image_dataloader.camera_params,
-        consts,
+        gs_config,
     )
 
 
