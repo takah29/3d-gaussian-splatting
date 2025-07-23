@@ -3,7 +3,7 @@
   "max_gaussians": 200000,
   "pruning_big_gaussian": false,
   "eps_prune_alpha": 0.005,
-  "tau_pos": 1e-6,
+  "tau_pos": 4e-7,
   "scale_threshold": 1.0,
   "split_gaussian_scale": 0.8,
   "split_num": 2,
