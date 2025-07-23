@@ -6,9 +6,9 @@ import optax  # type: ignore[import-untyped]
 
 from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
-from gs.function_factory import make_updater
+from gs.function_factory import make_render, make_updater
 from gs.helper import build_params, get_optimizer, print_info
-from gs.utils import save_params, to_numpy_dict
+from gs.utils import DataLogger, save_params, to_numpy_dict
 
 
 def main() -> None:  # noqa: PLR0915
@@ -65,10 +65,10 @@ def main() -> None:  # noqa: PLR0915
     optimizer = get_optimizer(optax.adam, 1.0, gs_config.extent, len(image_dataloader))
     opt_state = optimizer.init(raw_params)
 
-    # logger = DataLogger(save_dirpath / "progress")
+    logger = DataLogger(save_dir / "progress")
 
     update = make_updater(consts, optimizer, jit=True)
-
+    render = make_render(consts, active_sh_degree=3, jit=True)  # type: ignore[arg-type]
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
     active_sh_degree = 0
@@ -95,6 +95,8 @@ def main() -> None:  # noqa: PLR0915
                 image_dataloader.camera_params,
                 gs_config,
             )
+            image = render(raw_params, view)  # type: ignore[arg-type]
+            logger.save(image, f"output_iter{i:05d}.png")
 
         if i <= consts["densify_until_iter"]:
             # 密度化に使用する勾配ノルムを加算
