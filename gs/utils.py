@@ -164,13 +164,13 @@ def save_params_pkl(
 
 def save_params(
     save_path: Path,
-    params: dict[str, Any],
+    raw_params: dict[str, Any],
     camera_params: dict[str, Any],
     gs_config: GsConfig,
 ) -> None:
     save_path.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
-        save_path / "params", allow_pickle=False, **to_numpy_dict(get_corrected_params(params))
+        save_path / "params", allow_pickle=False, **to_numpy_dict(get_corrected_params(raw_params))
     )
     np.savez_compressed(
         save_path / "camera_params", allow_pickle=False, **to_numpy_dict(camera_params)
@@ -193,13 +193,18 @@ class DataLogger:
         plt.imsave(self.save_path / f"output_{self.count:05d}.png", image.clip(0, 1))
         self.count += 1
 
+    def save(self, image: jax.Array, filename: str) -> None:
+        """画像を保存する"""
+        plt.imsave(self.save_path / filename, image.clip(0, 1))
 
-def get_corrected_params(params: dict[str, Any]) -> dict[str, jax.Array]:
+
+def get_corrected_params(raw_params: dict[str, Any]) -> dict[str, jax.Array]:
     """パラメータを補正"""
     return {
-        "means3d": params["means3d"],
-        "quats": params["quats"] / (jnp.linalg.norm(params["quats"], axis=-1, keepdims=True)),
-        "scales": jnp.exp(params["scales"]),
-        "sh_coeffs": jnp.dstack((params["sh_dc"], params["sh_rest"])),
-        "opacities": jax.nn.sigmoid(params["opacities"]),
+        "means3d": raw_params["means3d"],
+        "quats": raw_params["quats"]
+        / (jnp.linalg.norm(raw_params["quats"], axis=-1, keepdims=True)),
+        "scales": jnp.exp(raw_params["scales"]),
+        "sh_coeffs": jnp.dstack((raw_params["sh_dc"], raw_params["sh_rest"])),
+        "opacities": jax.nn.sigmoid(raw_params["opacities"]),
     }

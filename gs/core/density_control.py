@@ -10,31 +10,31 @@ from gs.core.projection import compute_cov_vmap
 
 
 def prune_gaussians(
-    params: dict[str, npt.NDArray], consts: dict[str, Any]
+    raw_params: dict[str, npt.NDArray], consts: dict[str, Any]
 ) -> tuple[dict[str, npt.NDArray], int]:
-    prune_indices = (expit(params["opacities"]) < consts["eps_prune_alpha"]).ravel()
+    prune_indices = (expit(raw_params["opacities"]) < consts["eps_prune_alpha"]).ravel()
 
     # 空などを表現する巨大なガウシアンが必要ない場合に有効
     if consts["pruning_big_gaussian"]:
         print("pruning big gaussians...")
-        scale_prune_indices = np.exp(params["scales"].max(axis=1)) > consts["extent"] * 0.1
+        scale_prune_indices = np.exp(raw_params["scales"].max(axis=1)) > consts["extent"] * 0.1
         prune_indices = prune_indices | scale_prune_indices
 
-    pruned_params = {key: val[~prune_indices] for key, val in params.items()}
+    pruned_params = {key: val[~prune_indices] for key, val in raw_params.items()}
     return pruned_params, prune_indices.sum()
 
 
 def densify_gaussians(
-    params: dict[str, npt.NDArray],
+    raw_params: dict[str, npt.NDArray],
     view_space_grads_mean_norm: npt.NDArray,
     consts: dict[str, Any],
 ) -> tuple[dict[str, npt.NDArray], int, int]:
     tau_pos = consts["tau_pos"]
-    max_densification_num = consts["max_points"] - params["means3d"].shape[0]
+    max_densification_num = consts["max_gaussians"] - raw_params["means3d"].shape[0]
 
     while True:
         target_indices = view_space_grads_mean_norm > tau_pos
-        target_params = {key: val[target_indices] for key, val in params.items()}
+        target_params = {key: val[target_indices] for key, val in raw_params.items()}
 
         max_scales = np.exp(target_params["scales"].max(axis=1))
         clone_indices = max_scales < consts["scale_threshold"] * consts["extent"]
@@ -60,18 +60,18 @@ def densify_gaussians(
         split_num,  # type: ignore[arg-type]
     )
 
-    params = {
-        key: np.vstack((params[key][~target_indices], clone_params[key], split_params[key]))
-        for key in params
+    raw_params = {
+        key: np.vstack((raw_params[key][~target_indices], clone_params[key], split_params[key]))
+        for key in raw_params
     }
 
-    return params, cloned_num, splited_num
+    return raw_params, cloned_num, splited_num
 
 
 def clone_gaussians(
-    params: dict[str, npt.NDArray], clone_indices: npt.NDArray
+    raw_params: dict[str, npt.NDArray], clone_indices: npt.NDArray
 ) -> tuple[dict[str, npt.NDArray], int]:
-    clone_params = {key: val[clone_indices] for key, val in params.items()}
+    clone_params = {key: val[clone_indices] for key, val in raw_params.items()}
 
     # 以降で異なる勾配更新が起こり自然と分離するため同じパラメータのガウシアンを複製
     merged_params = {key: np.vstack((val, val)) for key, val in clone_params.items()}
@@ -80,13 +80,13 @@ def clone_gaussians(
 
 
 def split_gaussians(
-    params: dict[str, npt.NDArray],
+    raw_params: dict[str, npt.NDArray],
     covs_3d: npt.NDArray,
     split_indices: npt.NDArray,
     consts: dict[str, npt.NDArray],
     split_num: int,
 ) -> tuple[dict[str, npt.NDArray], int]:
-    split_params = {key: val[split_indices] for key, val in params.items()}
+    split_params = {key: val[split_indices] for key, val in raw_params.items()}
 
     key = jax.random.PRNGKey(0)
     split_means_3d_sampled = _batch_sample_from_covariance(
@@ -110,7 +110,7 @@ def split_gaussians(
     )
 
     merged_params = {}
-    for key in params:
+    for key in raw_params:
         values = [param_dict[key] for param_dict in split_params_tuple]  # type: ignore[index]
         merged_params[key] = np.vstack(values)
 

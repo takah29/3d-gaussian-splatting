@@ -38,10 +38,10 @@ def main() -> None:  # noqa: PLR0915
     args = parser.parse_args()
 
     gs_config = GsConfig.from_json_file(args.config_filepath)
-    params, image_dataloader = build_params(
+    raw_params, image_dataloader = build_params(
         args.colmap_data_path, gs_config, args.image_scale, args.n_epochs
     )
-    print_info(params)
+    print_info(raw_params)
 
     gs_config.derive_additional_property(
         image_batch=image_dataloader.image_batch,
@@ -57,20 +57,20 @@ def main() -> None:  # noqa: PLR0915
     # 初期パラメータの保存
     save_params(
         save_dir / "params_checkpoint_initial",
-        params,
+        raw_params,
         image_dataloader.camera_params,
         gs_config,
     )
 
     optimizer = get_optimizer(optax.adam, 1.0, gs_config.extent, len(image_dataloader))
-    opt_state = optimizer.init(params)
+    opt_state = optimizer.init(raw_params)
 
     # logger = DataLogger(save_dirpath / "progress")
 
     update = make_updater(consts, optimizer, jit=True)
 
-    view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
-    update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
+    view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
+    update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
     active_sh_degree = 0
 
     for i, (view, target) in enumerate(image_dataloader, start=1):
@@ -78,8 +78,12 @@ def main() -> None:  # noqa: PLR0915
             active_sh_degree += 1
             print(f"Active SH degree increased to {active_sh_degree}")
 
-        params, opt_state, loss, viewspace_grads = update(
-            params, view, target, opt_state, active_sh_degree
+        raw_params, opt_state, loss, viewspace_grads = update(
+            raw_params,
+            view,  # type: ignore[arg-type]
+            target,  # type: ignore[arg-type]
+            opt_state,
+            active_sh_degree,
         )
         print(f"Iter {i}: loss={loss}")
 
@@ -87,7 +91,7 @@ def main() -> None:  # noqa: PLR0915
         if i % args.checkpoint_cycle == 0:
             save_params(
                 save_dir / f"params_checkpoint_iter{i:05d}",
-                params,
+                raw_params,
                 image_dataloader.camera_params,
                 gs_config,
             )
@@ -102,7 +106,7 @@ def main() -> None:  # noqa: PLR0915
         if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
             print("===== Densification and Pruning ======")
             # 配列の動的な処理を行うのでnumpy配列に変換
-            params = to_numpy_dict(params)
+            raw_params = to_numpy_dict(raw_params)
 
             cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
@@ -110,38 +114,40 @@ def main() -> None:  # noqa: PLR0915
                 update_count_arr = np.array(update_count_arr)
 
                 enable_mask = view_space_grads_norm_acc > 0.0
-                viewspace_grads_mean_norm = np.zeros(params["means3d"].shape[0], dtype=np.float32)
+                viewspace_grads_mean_norm = np.zeros(
+                    raw_params["means3d"].shape[0], dtype=np.float32
+                )
                 viewspace_grads_mean_norm[enable_mask] = (
                     view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
                 )
 
-                params, cloned_num, splitted_num = densify_gaussians(
-                    params, viewspace_grads_mean_norm, consts
+                raw_params, cloned_num, splitted_num = densify_gaussians(
+                    raw_params, viewspace_grads_mean_norm, consts
                 )
 
             # alpha値が低いガウシアンの消去
-            params, pruned_num = prune_gaussians(params, consts)
+            raw_params, pruned_num = prune_gaussians(raw_params, consts)
 
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
             )
             delta_num = cloned_num + splitted_num - pruned_num
             print(
-                f"num of gaussian: {params['means3d'].shape[0] - delta_num} "
-                f"-> {params['means3d'].shape[0]}"
+                f"num of gaussian: {raw_params['means3d'].shape[0] - delta_num} "
+                f"-> {raw_params['means3d'].shape[0]}"
             )
             print("======================================")
 
             # 勾配ノルムの蓄積をリセット
-            view_space_grads_norm_acc = np.zeros(params["means3d"].shape[0], dtype=np.float32)
-            update_count_arr = np.zeros(params["means3d"].shape[0], dtype=np.int32)
+            view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
+            update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
 
             # paramsのデータ数が変わるのでoptimizerを初期化する
-            opt_state = optimizer.init(params)
+            opt_state = optimizer.init(raw_params)
 
     save_params(
         save_dir / "params_final",
-        params,
+        raw_params,
         image_dataloader.camera_params,
         gs_config,
     )

@@ -13,8 +13,11 @@ from gs.utils import ImageViewDataLoader, compute_nearest_distances, load_colmap
 def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     num_points = points_3d.shape[0]
 
-    nearest_distances = compute_nearest_distances(points_3d) ** 2
-    scales = np.log(np.clip(nearest_distances, 0.001, 3.0))[:, np.newaxis].repeat(3, axis=1)
+    nearest_distances = compute_nearest_distances(points_3d)
+    scale_factor = 0.5
+    scales = np.log(np.clip(nearest_distances * scale_factor, 0.001, 3.0))[:, np.newaxis].repeat(
+        3, axis=1
+    )
 
     # 回転なし、(x, y, z, w)形式
     quats = np.tile(np.array([0.0, 0.0, 0.0, 1.0]), (num_points, 1))
@@ -24,9 +27,9 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
     return {"scales": scales, "quats": quats, "opacities": opacities}
 
 
-def print_info(params: dict[str, npt.NDArray]) -> None:
-    print(f"{' params ':=^40}")
-    for k, v in params.items():
+def print_info(raw_params: dict[str, npt.NDArray]) -> None:
+    print(f"{' raw_params ':=^40}")
+    for k, v in raw_params.items():
         print(f"{k}: {v.shape}")
     print(f"{'=' * 40}")
 
@@ -53,14 +56,14 @@ def build_params(
     points_3d = points_3d[sampled_indices]
     colors = colors[sampled_indices]
 
-    params = {
+    raw_params = {
         "means3d": points_3d,
         "sh_dc": ((colors - 0.5) / SH_C0_0)[:, :, None],  # (r, g, b) in sh_deg0
         "sh_rest": np.zeros((sample_size, 3, 15), dtype=np.float32),
         **_init_gaussian_property(points_3d),
     }
 
-    return params, image_dataloader
+    return raw_params, image_dataloader
 
 
 def get_optimizer(optimizer_class, lr_scale: float, extent: float, total_iter: int):  # noqa: ANN001, ANN201
