@@ -4,7 +4,7 @@
   "pruning_big_gaussian": false,
   "eps_prune_alpha": 0.005,
   "tau_pos": 4e-7,
-  "scale_threshold": 1.0,
+  "scale_threshold": 0.005,
   "split_gaussian_scale": 0.8,
   "split_num": 2,
   "densify_from_iter": 1500,
