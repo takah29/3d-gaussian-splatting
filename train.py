@@ -8,7 +8,7 @@ from gs.config import GsConfig
 from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import make_render, make_updater
 from gs.helper import build_params, get_optimizer, print_info
-from gs.utils import DataLogger, save_params, to_numpy_dict
+from gs.utils import DataLogger, get_corrected_params, save_params, to_numpy_dict
 
 
 def main() -> None:  # noqa: PLR0915
@@ -95,7 +95,7 @@ def main() -> None:  # noqa: PLR0915
                 image_dataloader.camera_params,
                 gs_config,
             )
-            image = render(raw_params, view)  # type: ignore[arg-type]
+            image = render(get_corrected_params(raw_params), view)  # type: ignore[arg-type]
             logger.save(image, f"output_iter{i:05d}.png")
 
         if i <= consts["densify_until_iter"]:

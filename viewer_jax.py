@@ -38,7 +38,7 @@ def main() -> None:
 
     # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
     output_dir = args.params_dir.parent
-    params_dirs = sorted(output_dir.glob("*/"))
+    params_dirs = sorted(output_dir.glob("params_*/"))
     if len(params_dirs) == 0:
         sys.exit(f"Error: No checkpoint directory found in {params_dirs}")
 
