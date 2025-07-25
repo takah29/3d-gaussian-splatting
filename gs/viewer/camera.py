@@ -62,7 +62,7 @@ class GlControlStrategy(ControlStrategy):
         self, position: npt.NDArray, rotation: Rotation, dx: float, sensitivity: float
     ) -> tuple[npt.NDArray, Rotation]:
         roll_axis = rotation.apply(np.array([0, 0, 1]))
-        roll_rotation = Rotation.from_rotvec(np.radians(dx * sensitivity) * roll_axis)
+        roll_rotation = Rotation.from_rotvec(np.radians(-dx * sensitivity) * roll_axis)
         new_rotation = roll_rotation * rotation
         return position, new_rotation
 
@@ -96,7 +96,7 @@ class JaxControlStrategy(ControlStrategy):
         self, position: npt.NDArray, rotation: Rotation, dx: float, sensitivity: float
     ) -> tuple[npt.NDArray, Rotation]:
         roll_axis = rotation.apply(np.array([0, 0, 1]))
-        roll_rotation = Rotation.from_rotvec(np.radians(-dx * sensitivity) * roll_axis)
+        roll_rotation = Rotation.from_rotvec(np.radians(dx * sensitivity) * roll_axis)
         new_rotation = roll_rotation * rotation
         return position, new_rotation
 
