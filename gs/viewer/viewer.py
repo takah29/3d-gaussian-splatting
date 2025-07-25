@@ -11,7 +11,7 @@ class Viewer:
     """ユーザー入力、カメラ制御、データ管理を行い、Rendererに描画指示を出すクラス。"""
 
     # --- マウス感度設定 ---
-    MOUSE_SENSITIVITY_ORBIT = 0.2
+    MOUSE_SENSITIVITY_ROTATE = 0.05
     MOUSE_SENSITIVITY_PAN = 0.002
     MOUSE_SENSITIVITY_ZOOM = 0.3
     MOUSE_SENSITIVITY_ROLL = 0.1
@@ -205,7 +205,7 @@ class Viewer:
 
         dx, dy = xpos - self.last_mouse_pos[0], ypos - self.last_mouse_pos[1]
         if self.left_mouse_dragging:  # 左ドラッグで回転
-            self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ORBIT)
+            self.camera.rotate(dx, dy, self.MOUSE_SENSITIVITY_ROTATE)
         if self.right_mouse_dragging:  # 右ドラッグでパン
             self.camera.pan(dx, dy, self.MOUSE_SENSITIVITY_PAN)
         if self.middle_mouse_dragging:  # 中ドラッグでロール
