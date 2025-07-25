@@ -1,4 +1,3 @@
-import pickle
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -143,23 +142,6 @@ def compute_nearest_distances(points: npt.NDArray) -> npt.NDArray:
     nearest_point_distances = distances[:, 1:].ravel()  # type: ignore[index]
 
     return nearest_point_distances
-
-
-def save_params_pkl(
-    save_pkl_path: Path,
-    params: dict[str, npt.NDArray],
-    camera_params: dict[str, npt.NDArray],
-    consts: dict[str, Any],
-) -> None:
-    result = {
-        "params": get_corrected_params(params),  # type: ignore[arg-type]
-        "consts": consts,
-        "camera_params": camera_params,
-    }
-    result = {key: to_numpy_dict(val) for key, val in result.items()}
-
-    with save_pkl_path.open("wb") as f:
-        pickle.dump(result, f)
 
 
 def save_params(
