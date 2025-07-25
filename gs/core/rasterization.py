@@ -46,8 +46,8 @@ def _render_pixel(
     gaussians: dict[str, jax.Array],
     background: tuple[float, float, float],
 ) -> jax.Array:
-    pixel_color = jnp.asarray(background)
-    tau = jnp.ones((1,))
+    pixel_color = jnp.zeros((3,), dtype=jnp.float32)
+    tau = jnp.ones((1,), dtype=jnp.float32)
 
     means_2d = gaussians["means_2d"][depth_decending_indices]
     covs_2d = gaussians["covs_2d"][depth_decending_indices]
@@ -81,12 +81,12 @@ def _render_pixel(
 
         return (updated_pixel_color, updated_tau), None
 
-    (pixel_color, _), _ = jax.lax.scan(
+    (pixel_color, tau), _ = jax.lax.scan(
         body_fun,
         (pixel_color, tau),
         (depth_decending_indices, gaussian_weight_batch, colors),
     )
-    return pixel_color
+    return pixel_color + jnp.asarray(background) * tau
 
 
 def rasterize_tile_data(
