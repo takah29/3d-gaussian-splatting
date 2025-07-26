@@ -1,8 +1,8 @@
 # 3D Gaussian Splatting
 
-![drjhonson](./images/drjhonson_iter11k_1600.jpg)
-![train](./images/train_iter12k_1600.jpg)
-![garden](./images/garden_iter9k_1600.jpg)
+![drjhonson](./assets/images/drjhonson_iter11k_1600.jpg)
+![train](./assets/images/train_iter12k_1600.jpg)
+![garden](./assets/images/garden_iter9k_1600.jpg)
 
 ## Overview
 
