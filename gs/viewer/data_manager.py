@@ -124,7 +124,7 @@ class DataManager:
             return self._params_cache[index]
 
         params_dir = self._params_dirs[index]
-        print(f"Loading from disk: {params_dir.name} ...", end="", flush=True)
+        print(f"Loading from disk: {params_dir.name} ... ", end="", flush=True)
         try:
             params = dict(np.load(params_dir / "params.npz"))
 
@@ -148,7 +148,7 @@ class DataManager:
             self._params_cache[index] = params
             self._current_data_index = index
 
-            print(" Done.")
+            print(f"{params['means3d'].shape[0]} gaussians loaded.")
             return params
 
         except Exception as e:  # noqa: BLE001
