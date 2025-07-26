@@ -34,6 +34,9 @@ def main() -> None:
         default=Path(__file__).parent / "output" / "params_final",
         help="Checkpoint directory with parameter files",
     )
+    parser.add_argument(
+        "-w", "--window_size_wh", nargs=2, type=int, help="Initial window width and height"
+    )
     args = parser.parse_args()
 
     # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
@@ -51,6 +54,10 @@ def main() -> None:
         start_index = 0
 
     viewer = create_jax_viewer(params_dirs, start_index)
+
+    if args.window_size_wh:
+        viewer.set_windows_size(*args.window_size_wh)
+
     viewer.help_messege()
     viewer.run()
 

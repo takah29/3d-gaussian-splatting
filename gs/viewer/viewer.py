@@ -54,6 +54,11 @@ class Viewer:
         # 初回のビューポート設定
         self._framebuffer_size_callback(self.window, self.initial_width, self.initial_height)
 
+    def set_windows_size(self, width: int, height: int) -> None:
+        """ウィンドウのサイズを設定し、ビューポートを更新する。"""
+        glfw.set_window_size(self.window, width, height)
+        self._framebuffer_size_callback(self.window, width, height)
+
     def run(self) -> None:
         """メインループを実行する。"""
         while not glfw.window_should_close(self.window):
