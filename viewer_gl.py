@@ -38,13 +38,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
+    # 指定されたファイルと同じディレクトリにある全てのパラメータディレクトリを探索
     output_dir = args.params_dir.parent
     params_dirs = sorted(output_dir.glob("params_*/"))
     if len(params_dirs) == 0:
         sys.exit(f"Error: No checkpoint directory found in {params_dirs}")
 
-    # 初期ファイルのインデックスを特定
+    # 初期パラメータのインデックスを特定
     try:
         start_params_dir = args.params_dir.resolve()
         start_index = [p.resolve() for p in params_dirs].index(start_params_dir)

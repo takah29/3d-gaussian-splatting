@@ -38,11 +38,7 @@ class PostProcess:
 
 
 class DataManager:
-    """PKLファイルの探索、読み込み、キャッシングを管理するクラス
-
-    チェックポイントファイル(params_checkpoint_iter<イテレーション回数>.pkl)が異なっていても
-    カメラパラメータは共通であることを想定しているのでカメラパラメータは初回のロード時しか読み込まない
-    """
+    """パラメータファイルの探索、読み込み、キャッシングを管理するクラス"""
 
     def __init__(
         self,
@@ -103,13 +99,13 @@ class DataManager:
         return self._consts
 
     def move_data_index(self, step: int) -> int:
-        """現在のインデックスをstep分移動させる"""
+        """現在のデータインデックスをstep分移動させる"""
         num_files = len(self._params_dirs)
         self._current_data_index = (self._current_data_index + step + num_files) % num_files
         return self._current_data_index
 
     def move_camera_param_index(self, step: int) -> int:
-        """現在のインデックスをstep分移動させる"""
+        """現在のカメラパラメータインデックスをstep分移動させる"""
         if self._camera_params is None:
             msg = "No data loaded."
             raise ValueError(msg)
@@ -119,7 +115,11 @@ class DataManager:
         return self._camera_param_index
 
     def load_data(self, index: int) -> dict[str, npt.NDArray] | None:
-        """指定インデックスのデータをロードし、キャッシュする"""
+        """指定インデックスのデータをロードし、キャッシュする
+
+        チェックポイントディレクトリ(params_checkpoint_iter<イテレーション回数>)が異なっていても
+        カメラパラメータは共通であることを想定しているので、初回のみロードする
+        """
         if index in self._params_cache:
             return self._params_cache[index]
 
@@ -156,7 +156,7 @@ class DataManager:
             return None
 
     @staticmethod
-    def create_for_gldata(pkl_files: list[Path]) -> "DataManager":
+    def create_for_gldata(params_dirs: list[Path]) -> "DataManager":
         """OpenGL座標系への変換処理クラスを生成
 
         学習時の座標系からOpenGLの座標系への変換行列を定義
@@ -170,4 +170,4 @@ class DataManager:
             ]
         )
         post_process = PostProcess(transform_matrix)
-        return DataManager(pkl_files, post_process)
+        return DataManager(params_dirs, post_process)

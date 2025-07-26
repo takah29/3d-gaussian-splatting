@@ -97,7 +97,7 @@ class Viewer:
         self._update_window_title()
 
     def _load_params(self, index: int) -> None:
-        """指定インデックスのpklファイルをロードし、レンダラを更新する。"""
+        """指定インデックスのパラメータをロードし、レンダラを更新する。"""
         self.params = self.data_manager.load_data(index)
         self.renderer.update_gaussian_data(self.params)  # type: ignore[arg-type]
 

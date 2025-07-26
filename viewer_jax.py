@@ -39,7 +39,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 指定されたファイルと同じディレクトリにある全ての.pklファイルを探索
+    # 指定されたファイルと同じディレクトリにある全てのパラメータディレクトリを探索
     output_dir = args.params_dir.parent
     params_dirs = sorted(output_dir.glob("params_*/"))
     if len(params_dirs) == 0:
