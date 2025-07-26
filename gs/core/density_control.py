@@ -47,12 +47,12 @@ def densify_gaussians(
             break
         tau_pos *= 2.0
 
-    clone_params, cloned_num = clone_gaussians(target_params, clone_indices)
+    clone_params, cloned_num = _clone_gaussians(target_params, clone_indices)
     covs_3d = compute_cov_vmap(
         target_params["quats"] / np.linalg.norm(target_params["quats"], axis=-1, keepdims=True),
         np.exp(target_params["scales"]),  # type: ignore[arg-type]
     )
-    split_params, splited_num = split_gaussians(
+    split_params, splited_num = _split_gaussians(
         target_params,
         covs_3d,  # type: ignore[arg-type]
         split_indices,
@@ -68,7 +68,7 @@ def densify_gaussians(
     return raw_params, cloned_num, splited_num
 
 
-def clone_gaussians(
+def _clone_gaussians(
     raw_params: dict[str, npt.NDArray], clone_indices: npt.NDArray
 ) -> tuple[dict[str, npt.NDArray], int]:
     clone_params = {key: val[clone_indices] for key, val in raw_params.items()}
@@ -79,7 +79,7 @@ def clone_gaussians(
     return merged_params, clone_indices.sum()
 
 
-def split_gaussians(
+def _split_gaussians(
     raw_params: dict[str, npt.NDArray],
     covs_3d: npt.NDArray,
     split_indices: npt.NDArray,

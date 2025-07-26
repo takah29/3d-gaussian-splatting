@@ -83,7 +83,7 @@ sh_computations_vmap = tuple(
 )
 
 
-def compute_color_from_sh_switch(
+def _compute_color_from_sh_switch(
     points_3d: jax.Array,
     t_vec: jax.Array,
     sh_coeffs: jax.Array,  # (N, 3, 16)
@@ -176,7 +176,7 @@ def project(
     active_sh_degree: jax.Array,
 ) -> dict[str, jax.Array]:
     # 球面調和関数による色計算
-    colors = compute_color_from_sh_switch(
+    colors = _compute_color_from_sh_switch(
         params["means3d"],
         t_vec,
         params["sh_coeffs"],

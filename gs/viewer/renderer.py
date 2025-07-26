@@ -394,7 +394,7 @@ class GsRendererGl(GsRendererBase):
         self.program.release()
         self.ctx.release()
 
-    def update_sorted_indices(self, sorted_indices: npt.NDArray) -> None:
+    def _update_sorted_indices(self, sorted_indices: npt.NDArray) -> None:
         """ソート済みインデックスのSSBOを更新する。"""
         if self.ssbo_indices:
             self.ssbo_indices.write(sorted_indices.astype("i4").tobytes())
@@ -402,7 +402,7 @@ class GsRendererGl(GsRendererBase):
     def _sort_and_update_gaussians(self, rot_mat: npt.NDArray, t_vec: npt.NDArray) -> None:
         """ガウシアンをソートし、レンダラのインデックスバッファを更新する。"""
         sorted_indices_jax = self.sorter(self.means3d_jax, jnp.asarray(rot_mat), jnp.asarray(t_vec))
-        self.update_sorted_indices(np.asarray(sorted_indices_jax))
+        self._update_sorted_indices(np.asarray(sorted_indices_jax))
 
     @staticmethod
     def _flatten_gaussian_data(params: dict) -> npt.NDArray:
