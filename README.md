@@ -108,3 +108,9 @@ This implementation differs from the original due to JAX JIT compilation requiri
 During training, Gaussians that are not rendered in a particular iteration won't have their parameters updated. However, this is typically compensated by updates from other viewpoint iterations.
 
 Compared to CUDA implementations, this implementation has slower execution speed and higher device memory usage.
+
+## References
+
+- [3D Gaussian Splatting for Real-Time Radiance Field Rendering](https://github.com/graphdeco-inria/gaussian-splatting)
+- [Easy Gaussian Splatting](https://github.com/scomup/EasyGaussianSplatting)
+- [jaxsplat](https://github.com/yklcs/jaxsplat)
