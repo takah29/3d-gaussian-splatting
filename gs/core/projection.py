@@ -133,7 +133,7 @@ def compute_cov(quat: jax.Array, scale: jax.Array) -> jax.Array:
     return prod_mat @ prod_mat.T
 
 
-def to_2dcov(
+def compute_cov_2d(
     mean_3d: jax.Array,
     cov_3d: jax.Array,
     rot_mat: jax.Array,
@@ -167,6 +167,17 @@ def to_2dcov(
     return prod_mat @ cov_3d @ prod_mat.T
 
 
+def compute_cov_2d_inv_flat(cov_2d):
+    """2D共分散行列の逆行列をフラットな形式で計算"""
+    a = cov_2d[0, 0]
+    b = cov_2d[0, 1]
+    d = cov_2d[1, 1]
+
+    inv_det = 1.0 / (a * d - b * b + 1e-8)
+
+    return inv_det * jnp.array([d, -b, a])
+
+
 def project(
     params: dict[str, jax.Array],
     rot_mat: jax.Array,
@@ -190,16 +201,20 @@ def project(
     covs = compute_cov_vmap(params["quats"], params["scales"])
 
     # 3D Gaussianの3D共分散を2D画面に投影したときの2D共分散を計算
-    covs_2d_raw = to_2dcov_vmap(
+    covs_2d_raw = compute_cov_2d_vmap(
         params["means3d"], covs, rot_mat, t_vec, intrinsic_vec, consts["img_shape"]
     )
 
     # 特異行列対策
     covs_2d = covs_2d_raw + jnp.eye(2) * 0.3
 
+    # 2D共分散の逆行列を事前計算
+    covs_2d_inv_flat = compute_cov_2d_inv_flat_vmap(covs_2d)
+
     return {
         "means_2d": projected_points,
         "covs_2d": covs_2d,
+        "covs_2d_inv_flat": covs_2d_inv_flat,
         "colors": colors,
         "opacities": params["opacities"],
         "depths": depths,
@@ -208,4 +223,5 @@ def project(
 
 project_point_vmap = jax.vmap(project_point, in_axes=(0, None, None, None))
 compute_cov_vmap = jax.vmap(compute_cov, in_axes=(0, 0))
-to_2dcov_vmap = jax.vmap(to_2dcov, in_axes=(0, 0, None, None, None, None))
+compute_cov_2d_vmap = jax.vmap(compute_cov_2d, in_axes=(0, 0, None, None, None, None))
+compute_cov_2d_inv_flat_vmap = jax.vmap(compute_cov_2d_inv_flat, in_axes=0)

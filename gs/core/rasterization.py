@@ -22,19 +22,18 @@ def analytical_max_eigenvalue(mat2x2: jax.Array) -> jax.Array:
 def _gaussian_weight(
     pixel_coord: jax.Array,
     mean_2d: jax.Array,
-    cov_2d: jax.Array,
+    cov_2d_inv_flat: jax.Array,
     opacity: jax.Array,
 ) -> jax.Array:
-    a = cov_2d[0, 0]
-    b = cov_2d[0, 1]
-    d = cov_2d[1, 1]
-
-    inv_det = 1.0 / (a * d - b * b + 1e-8)
+    a11, a12, a22 = cov_2d_inv_flat
 
     dx = pixel_coord[0] - mean_2d[0]
     dy = pixel_coord[1] - mean_2d[1]
 
-    mahal_dist = jnp.maximum(0.0, (d * dx * dx - 2 * b * dx * dy + a * dy * dy) * inv_det)
+    mahal_dist = jnp.maximum(
+        0.0,
+        dx * dx * a11 + 2 * dx * dy * a12 + dy * dy * a22,
+    )
 
     return jnp.minimum(0.99, jnp.exp(-0.5 * mahal_dist) * opacity)
 
@@ -50,12 +49,12 @@ def _render_pixel(
     tau = jnp.ones((1,), dtype=jnp.float32)
 
     means_2d = gaussians["means_2d"][depth_decending_indices]
-    covs_2d = gaussians["covs_2d"][depth_decending_indices]
+    covs_2d_inv_flat = gaussians["covs_2d_inv_flat"][depth_decending_indices]
     opacities = gaussians["opacities"][depth_decending_indices]
     colors = gaussians["colors"][depth_decending_indices]
 
     gaussian_weight_batch = jax.vmap(_gaussian_weight, in_axes=(None, 0, 0, 0))(
-        pixel_coord, means_2d, covs_2d, opacities
+        pixel_coord, means_2d, covs_2d_inv_flat, opacities
     )
 
     @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
