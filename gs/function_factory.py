@@ -71,11 +71,14 @@ def make_updater(
 
 
 def make_render(
-    consts: dict[str, Any], active_sh_degree: jax.Array, *, jit: bool = True
+    consts: dict[str, Any], active_sh_degree: int, *, jit: bool = True
 ) -> Callable[[dict[str, jax.Array], dict[str, jax.Array]], jax.Array]:
     def render(params: dict[str, jax.Array], view: dict[str, jax.Array]) -> jax.Array:
         projected_gaussians = project(
-            params, **view, consts=consts, active_sh_degree=active_sh_degree
+            params,
+            **view,
+            consts=consts,
+            active_sh_degree=active_sh_degree,  # type: ignore[arg-type]
         )
 
         return rasterize(projected_gaussians, consts)

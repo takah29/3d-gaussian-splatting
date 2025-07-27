@@ -102,7 +102,7 @@ class GsRendererJax(GsRendererBase):
     ) -> None:
         """JAXで画像を計算し、その結果をModernGLで画面に描画する。"""
         # 1. JAXで画像をレンダリング
-        image_data = np.asarray(self.render_fn(self.params, view))
+        image_data = np.asarray(self.render_fn(self.params, view))  # type: ignore[arg-type]
 
         # 2. 生成された画像をテクスチャに書き込み、画面に描画
         self.image_texture.write(image_data.astype("f4").tobytes())

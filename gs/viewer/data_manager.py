@@ -149,7 +149,7 @@ class DataManager:
             self._current_data_index = index
 
             print(f"{params['means3d'].shape[0]} gaussians loaded.")
-            return params
+            return params  # noqa: TRY300
 
         except Exception as e:  # noqa: BLE001
             print(f" Error loading {params_dir.name}: {e}", file=sys.stderr)

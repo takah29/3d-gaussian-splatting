@@ -91,7 +91,7 @@ def main() -> None:  # noqa: PLR0915
         if i % args.checkpoint_cycle == 0:
             save_params(
                 save_dir / f"params_checkpoint_iter{i:05d}",
-                raw_params,
+                raw_params,  # type: ignore[arg-type]
                 image_dataloader.camera_params,
                 gs_config,
             )
@@ -100,7 +100,7 @@ def main() -> None:  # noqa: PLR0915
 
         if i <= consts["densify_until_iter"]:
             # 密度化に使用する勾配ノルムを加算
-            view_space_grads_norm = np.linalg.norm(viewspace_grads, axis=1)
+            view_space_grads_norm = np.linalg.norm(np.asarray(viewspace_grads), axis=1)
             view_space_grads_norm_acc += view_space_grads_norm
             update_count_arr += view_space_grads_norm > 0.0
 
@@ -108,7 +108,7 @@ def main() -> None:  # noqa: PLR0915
         if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
             print("===== Densification and Pruning ======")
             # 配列の動的な処理を行うのでnumpy配列に変換
-            raw_params = to_numpy_dict(raw_params)
+            raw_params = to_numpy_dict(raw_params)  # type: ignore[arg-type]
 
             cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
@@ -149,7 +149,7 @@ def main() -> None:  # noqa: PLR0915
 
     save_params(
         save_dir / "params_final",
-        raw_params,
+        raw_params,  # type: ignore[arg-type]
         image_dataloader.camera_params,
         gs_config,
     )
