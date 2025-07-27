@@ -98,7 +98,12 @@ class Viewer:
 
     def _load_params(self, index: int) -> None:
         """指定インデックスのパラメータをロードし、レンダラを更新する。"""
-        self.params = self.data_manager.load_data(index)
+        result = self.data_manager.load_data(index)
+        if result is None:
+            print("No data loaded.")
+            return
+
+        self.params = result
         self.renderer.update_gaussian_data(self.params)  # type: ignore[arg-type]
 
         self.camera_dirty = True
