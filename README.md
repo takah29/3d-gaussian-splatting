@@ -78,6 +78,7 @@ uv run viewer_gl.py -f <parameter_directory>
 ```
 
 Example:
+
 ```bash
 uv run viewer_gl.py -f ./output/params_final
 ```
@@ -89,12 +90,14 @@ uv run viewer_jax.py -f ./output/params_final
 ```
 
 **Mouse:**
+
 - Left Drag: Rotate
 - Right Drag: Pan
 - Middle Drag: Roll
 - Scroll: Forward/Backward
 
 **Arrow Keys:**
+
 - Up/Down: Change parameters
   - Loads files in the same directory as the specified parameter directory
 - Left/Right: Change camera pose
@@ -106,9 +109,9 @@ uv run viewer_jax.py -f ./output/params_final
 
 This implementation differs from the original due to JAX JIT compilation requiring static arrays. As a result:
 
-* There's a maximum limit on Gaussians that can be registered per tile
-* Color blending processing is limited to a fixed number of iterations
-* When Gaussians are densely packed in certain tiles, some may not be rendered due to the iteration limit, potentially causing artifacts
+- There's a maximum limit on Gaussians that can be registered per tile
+- Color blending processing is limited to a fixed number of iterations
+- When Gaussians are densely packed in certain tiles, some may not be rendered due to the iteration limit, potentially causing artifacts
 
 During training, Gaussians that are not rendered in a particular iteration won't have their parameters updated. However, this is typically compensated by updates from other viewpoint iterations.
 
