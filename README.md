@@ -102,8 +102,8 @@ uv run viewer_jax.py -f ./output/params_final
   - Loads files in the same directory as the specified parameter directory
 - Left/Right: Change camera pose
 
-<div><video controls src="https://github.com/user-attachments/assets/582b98e1-a8bf-4be2-b7f1-97a654ccb4d1"></video></div>
-<div><video controls src="https://github.com/user-attachments/assets/79be6f66-05e3-42da-adae-1469e9bcaf11"></video></div>
+<div><video controls src="https://github.com/user-attachments/assets/9955e7b7-8a84-4733-8213-6a4977ead304"></video></div>
+<div><video controls src="https://github.com/user-attachments/assets/4bf8f020-49ca-4673-a47a-697732b0abaa"></video></div>
 
 ## Implementation Details
 
