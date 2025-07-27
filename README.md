@@ -48,6 +48,8 @@ For example, to use the train dataset from T&T+DB COLMAP (for datasets with arou
 uv run train.py ./tandt_db/tandt/train -e 30
 ```
 
+On a GeForce RTX 5070 Ti, this takes approximately 30 minutes.
+
 By default, the trained parameter files are saved as `./output/params_final` in the repository root. Additionally, optimization parameters and progress images are saved every 500 iterations.
 
 ### Memory Optimization
@@ -96,6 +98,9 @@ uv run viewer_jax.py -f ./output/params_final
 - Up/Down: Change parameters
   - Loads files in the same directory as the specified parameter directory
 - Left/Right: Change camera pose
+
+<div><video controls src="https://github.com/user-attachments/assets/582b98e1-a8bf-4be2-b7f1-97a654ccb4d1"></video></div>
+<div><video controls src="https://github.com/user-attachments/assets/79be6f66-05e3-42da-adae-1469e9bcaf11"></video></div>
 
 ## Implementation Details
 
