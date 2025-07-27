@@ -173,7 +173,7 @@ def compute_cov_2d_inv_flat(cov_2d):
     b = cov_2d[0, 1]
     d = cov_2d[1, 1]
 
-    inv_det = 1.0 / (a * d - b * b + 1e-8)
+    inv_det = 1.0 / (a * d - b * b)
 
     return inv_det * jnp.array([d, -b, a])
 
