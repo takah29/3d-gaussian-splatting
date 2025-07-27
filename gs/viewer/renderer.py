@@ -40,7 +40,7 @@ class GsRendererJax(GsRendererBase):
 
     # --- シェーダ定義 ---
     VERTEX_SHADER = """
-        #version 330
+        #version 430
         in vec2 in_position;
         in vec2 in_texcoord_0;
         out vec2 v_uv;
@@ -50,7 +50,7 @@ class GsRendererJax(GsRendererBase):
         }
     """
     FRAGMENT_SHADER = """
-        #version 330
+        #version 430
         uniform sampler2D u_texture;
         in vec2 v_uv;
         out vec4 f_color;
@@ -61,7 +61,7 @@ class GsRendererJax(GsRendererBase):
 
     def __init__(self, initial_params: dict, consts: dict) -> None:
         """JAXのレンダリング関数とModernGLの描画オブジェクトを初期化する。"""
-        self.ctx = moderngl.create_context(require=330)
+        self.ctx = moderngl.create_context(require=430)
         # --- JAX部分の初期化 ---
         self.params = initial_params
         self.consts = consts
