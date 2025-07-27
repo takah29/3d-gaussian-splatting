@@ -167,11 +167,11 @@ class GsRendererGl(GsRendererBase):
         // Outputs to Fragment Shader
         out vec3 pass_color;
         out float pass_alpha;
-        out vec3 pass_conic;
+        out vec3 pass_cov_2d_inv;
         out vec2 pass_coordxy;
 
-        mat3 quat_to_rotmat(vec4 q) {
-            float x = q.x, y = q.y, z = q.z, w = q.w;
+        mat3 quat_to_rotmat(vec4 quat) {
+            float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
             return mat3(
                 1.f - 2.f * (y * y + z * z), 2.f * (x * y + w * z), 2.f * (x * z - w * y),
                 2.f * (x * y - w * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z + w * x),
@@ -179,7 +179,41 @@ class GsRendererGl(GsRendererBase):
             );
         }
 
-        vec3 computeColorFromSH(vec3 direction, float sh_coeff[48]) {
+        mat3 compute_cov(vec4 quat, vec3 scale){
+            mat3 rot_mat = quat_to_rotmat(quat);
+            mat3 s_mat = mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
+            mat3 prod_mat = rot_mat * s_mat;
+            return prod_mat * transpose(prod_mat);
+        }
+
+        mat2 compute_cov_2d(mat3 cov_3d_world, mat3 rot_mat, vec3 pos_view) {
+            float tan_fovx = 2.0 * atan(u_resolution.x / (2.0 * focal_x));
+            float tan_fovy = 2.0 * atan(u_resolution.y / (2.0 * focal_y));
+            float limx = 1.3 * tan_fovx;
+            float limy = 1.3 * tan_fovy;
+
+            float z = pos_view.z;
+            float x_clipped = clamp(pos_view.x / z, -limx, limx) * z;
+            float y_clipped = clamp(pos_view.y / z, -limy, limy) * z;
+
+            mat3 jacobian = mat3(
+                focal_x / z, 0.0, 0.0,
+                0.0, focal_y / z, 0.0,
+                -focal_x * x_clipped / (z*z), -focal_y * y_clipped / (z*z), 0.0
+            );
+
+            mat3 prod_mat = jacobian * rot_mat;
+
+            return mat2(prod_mat * cov_3d_world * transpose(prod_mat));
+        }
+
+        float max_eigenvalue(mat2 cov_2d, float det) {
+            float mid = 0.5 * (cov_2d[0][0] + cov_2d[1][1]);
+            float lambda1 = mid + sqrt(max(0.1, mid*mid - det));
+            return sqrt(lambda1);
+        }
+
+        vec3 compute_color_from_sh(vec3 direction, float sh_coeff[48]) {
             float x = direction.x, y = direction.y, z = direction.z;
             float xx = x * x, yy = y * y, zz = z * z, xy = x * y, yz = y * z, xz = x * z;
 
@@ -229,7 +263,7 @@ class GsRendererGl(GsRendererBase):
                 return;
             }
 
-            vec3 direction = normalize(pos_world-t_vec);
+            vec3 direction = normalize(pos_world - t_vec);
 
             float sh_coeff[48];
             int sh_start = offset + 11; // pos:3 + rot:4 + scale:3 + opacity:1 = 11
@@ -237,45 +271,24 @@ class GsRendererGl(GsRendererBase):
                 sh_coeff[i] = g_data[sh_start + i];
             }
 
-            pass_color = computeColorFromSH(direction, sh_coeff);
+            pass_color = compute_color_from_sh(direction, sh_coeff);
 
-            mat3 R = quat_to_rotmat(rot_quat);
-            mat3 S = mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
-            mat3 cov3D_world = R * S * transpose(S) * transpose(R);
+            mat3 cov_3d_world = compute_cov(rot_quat, scale);
+            mat2 cov_2d = compute_cov_2d(cov_3d_world, rot_mat, pos_view);
 
-            mat3 cov3D_view = rot_mat * cov3D_world * transpose(rot_mat);
+            cov_2d[0][0] += 0.3;
+            cov_2d[1][1] += 0.3;
 
-            float tan_fovx = 2.0 * atan(u_resolution.x / (2.0 * focal_x));
-            float tan_fovy = 2.0 * atan(u_resolution.y / (2.0 * focal_y));
-            float limx = 1.3 * tan_fovx;
-            float limy = 1.3 * tan_fovy;
-
-            float z = pos_view.z;
-            float x_clipped = clamp(pos_view.x / z, -limx, limx) * z;
-            float y_clipped = clamp(pos_view.y / z, -limy, limy) * z;
-
-            mat3 J = mat3(
-                focal_x / z, 0.0, 0.0,
-                0.0, focal_y / z, 0.0,
-                -focal_x * x_clipped / (z*z), -focal_y * y_clipped / (z*z), 0.0
-            );
-
-            mat3 cov2D = J * cov3D_view * transpose(J);
-            cov2D[0][0] += 0.3;
-            cov2D[1][1] += 0.3;
-
-            float det = determinant(mat2(cov2D));
+            float det = determinant(cov_2d);
             if (det == 0.0) {
                 gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
                 return;
             }
 
             float det_inv = 1.0 / det;
-            pass_conic = vec3(cov2D[1][1] * det_inv, -cov2D[0][1] * det_inv, cov2D[0][0] * det_inv);
+            pass_cov_2d_inv = det_inv * vec3(cov_2d[1][1], -cov_2d[0][1], cov_2d[0][0]);
 
-            float mid = 0.5 * (cov2D[0][0] + cov2D[1][1]);
-            float lambda1 = mid + sqrt(max(0.1, mid*mid - det));
-            float radius = 3.0 * sqrt(lambda1);
+            float radius = 3.0 * max_eigenvalue(cov_2d, det);
 
             vec2 quad_radius_ndc = radius / u_resolution * 2.0;
             vec4 pos_clip = projection_matrix * vec4(pos_view, 1.0);
@@ -287,20 +300,20 @@ class GsRendererGl(GsRendererBase):
         #version 430 core
         in vec3 pass_color;
         in float pass_alpha;
-        in vec3 pass_conic;
+        in vec3 pass_cov_2d_inv;
         in vec2 pass_coordxy;
         out vec4 FragColor;
 
         void main() {
             float power = -0.5 * (
-                pass_conic.x * pass_coordxy.x * pass_coordxy.x + pass_conic.z * pass_coordxy.y * pass_coordxy.y
-            ) - pass_conic.y * pass_coordxy.x * pass_coordxy.y;
+                pass_cov_2d_inv.x * pass_coordxy.x * pass_coordxy.x + pass_cov_2d_inv.z * pass_coordxy.y * pass_coordxy.y
+            ) - pass_cov_2d_inv.y * pass_coordxy.x * pass_coordxy.y;
             if (power > 0.0) discard;
 
-            float G_alpha = min(0.99, pass_alpha * exp(power));
-            if (G_alpha < 1.0/255.0) discard;
+            float gaussian_weight = min(0.99, pass_alpha * exp(power));
+            if (gaussian_weight <= 1.0/255.0) discard;
 
-            FragColor = vec4(pass_color, G_alpha);
+            FragColor = vec4(pass_color, gaussian_weight);
         }
     """  # noqa: E501
 
