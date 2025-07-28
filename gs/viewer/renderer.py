@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -59,7 +60,7 @@ class GsRendererJax(GsRendererBase):
         }
     """
 
-    def __init__(self, initial_params: dict, consts: dict) -> None:
+    def __init__(self, initial_params: dict, consts: dict[str, Any]) -> None:
         """JAXのレンダリング関数とModernGLの描画オブジェクトを初期化する。"""
         self.ctx = moderngl.create_context(require=430)
         # --- JAX部分の初期化 ---
@@ -74,7 +75,9 @@ class GsRendererJax(GsRendererBase):
         )
 
         # JAX版特有のレンダリング設定
-        self.consts["tile_max_gs_num"] *= 3  # 学習時よりタイルあたりのガウシアン数を増やす
+        self.consts["tile_max_gs_num"] = 3 * self._calc_tile_max_gs_num(
+            self.consts
+        )  # 学習時よりタイルあたりのガウシアン数を増やす
 
         width, height = self.consts["img_shape"][::-1]
         self.image_texture = self.ctx.texture((width, height), 3, dtype="f4")
@@ -93,6 +96,12 @@ class GsRendererJax(GsRendererBase):
         self.quad_vao = self.ctx.vertex_array(
             self.program, [(quad_buffer, "2f 2f", "in_position", "in_texcoord_0")]
         )
+
+    @staticmethod
+    def _calc_tile_max_gs_num(consts: dict[str, Any]) -> int:
+        height, width = consts["img_shape"]
+        n_tiles = (height // consts["tile_size"]) * (width // consts["tile_size"])
+        return int(consts["tile_max_gs_num_factor"] * consts["max_gaussians"] / n_tiles)
 
     def render(
         self,

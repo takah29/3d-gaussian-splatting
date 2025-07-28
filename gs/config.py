@@ -46,7 +46,7 @@ class GsConfig:
     tile_max_gs_num: int = field(init=False)  # タイルあたりの最大ガウシアン数
 
     def derive_additional_property(
-        self, image_batch: npt.NDArray, camera_params: dict[str, npt.NDArray]
+        self, image_batch: npt.NDArray, camera_params: dict[str, npt.NDArray], n_gaussians: int
     ) -> None:
         self.img_shape = image_batch.shape[1:3]
         self.extent = float(
@@ -55,7 +55,7 @@ class GsConfig:
             ).max()
             * 1.1
         )
-        self.tile_max_gs_num = self._calc_tile_max_gs_num(*self.img_shape)
+        self.set_tile_max_gs_num(n_gaussians)
 
     def display(self) -> None:
         """設定パラメータを表示する。"""
@@ -86,9 +86,10 @@ class GsConfig:
         with json_path.open("w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
-    def _calc_tile_max_gs_num(self, height: int, width: int) -> int:
+    def set_tile_max_gs_num(self, n_gaussians: int) -> None:
+        height, width = self.img_shape
         n_tiles = (height // self.tile_size) * (width // self.tile_size)
-        return int(self.tile_max_gs_num_factor * self.max_gaussians / n_tiles)
+        self.tile_max_gs_num = int(self.tile_max_gs_num_factor * n_gaussians / n_tiles)
 
     @classmethod
     def from_json_file(cls, json_path: Path) -> "GsConfig":

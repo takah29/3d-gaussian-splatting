@@ -46,6 +46,7 @@ def main() -> None:  # noqa: PLR0915
     gs_config.derive_additional_property(
         image_batch=image_dataloader.image_batch,
         camera_params=image_dataloader.camera_params,
+        n_gaussians=raw_params["means3d"].shape[0],
     )
     gs_config.display()
     consts = gs_config.to_dict()
@@ -129,6 +130,9 @@ def main() -> None:  # noqa: PLR0915
 
             # alpha値が低いガウシアンの消去
             raw_params, pruned_num = prune_gaussians(raw_params, consts)
+
+            # タイルあたりのガウシアン数を更新
+            gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
 
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
