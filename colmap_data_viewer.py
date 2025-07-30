@@ -21,8 +21,7 @@ def plot_reconstruction(
     figure["reconstruction"].add_scatter(
         data=points["points_3d"],
         name="points_3d",
-        cmap="viridis_r",
-        alpha=0.5,
+        colors=np.hstack((points["colors"], np.ones((len(points["colors"]), 1)))),
         sizes=2,
     )
 
