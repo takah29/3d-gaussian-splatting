@@ -14,7 +14,7 @@ class PostProcess:
     def __init__(self, transform_matrix: npt.NDArray) -> None:
         self.transform_matrix = transform_matrix
 
-    def params_to_gldata(self, params: dict) -> dict:
+    def params_to_gldata(self, params: dict[str, npt.NDArray]) -> dict[str, npt.NDArray]:
         """学習済みパラメータをOpenGLの座標系とデータ形式に変換"""
         params["means3d"] = (self.transform_matrix @ params["means3d"].T).T
 
@@ -27,7 +27,9 @@ class PostProcess:
         params["quats"] = Rotation.from_matrix(transformed_matrices).as_quat()
         return params
 
-    def camera_params_to_gldata(self, camera_params: dict) -> dict:
+    def camera_params_to_gldata(
+        self, camera_params: dict[str, npt.NDArray]
+    ) -> dict[str, npt.NDArray]:
         """カメラパラメータをOpenGLの座標系に変換"""
         camera_params["rot_mat_batch"] = (
             self.transform_matrix @ camera_params["rot_mat_batch"] @ self.transform_matrix.T

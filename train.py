@@ -69,7 +69,7 @@ def main() -> None:  # noqa: PLR0915
     logger = DataLogger(save_dir / "progress")
 
     update = make_updater(consts, optimizer, jit=True)
-    render = make_render(consts, active_sh_degree=3, jit=True)  # type: ignore[arg-type]
+    render = make_render(consts, active_sh_degree=3, jit=True)
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
     active_sh_degree = 0

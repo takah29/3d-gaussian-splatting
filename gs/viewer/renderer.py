@@ -119,7 +119,7 @@ class GsRendererJax(GsRendererBase):
         self.image_texture.use(location=0)
         self.quad_vao.render(moderngl.TRIANGLE_STRIP)
 
-    def update_gaussian_data(self, params: dict) -> None:
+    def update_gaussian_data(self, params: dict[str, npt.NDArray]) -> None:
         """レンダリングに使用するガウシアンパラメータを更新する。"""
         self.params = params
 
@@ -326,7 +326,7 @@ class GsRendererGl(GsRendererBase):
         }
     """  # noqa: E501
 
-    def __init__(self, initial_params: dict) -> None:
+    def __init__(self, initial_params: dict[str, npt.NDArray]) -> None:
         self.ctx = moderngl.create_context(require=430)
 
         # シェーダとプログラム
@@ -379,7 +379,7 @@ class GsRendererGl(GsRendererBase):
             self._sort_and_update_gaussians(view["rot_mat"], view["t_vec"])
             self.vao.render(moderngl.TRIANGLE_STRIP, vertices=4, instances=self.num_gaussians)
 
-    def update_gaussian_data(self, params: dict) -> None:
+    def update_gaussian_data(self, params: dict[str, npt.NDArray]) -> None:
         """ガウシアンデータ用のSSBOを作成または更新する。"""
         new_num_gaussians = params["means3d"].shape[0]
         flat_data = self._flatten_gaussian_data(params)
@@ -427,7 +427,7 @@ class GsRendererGl(GsRendererBase):
         self._update_sorted_indices(np.asarray(sorted_indices_jax))
 
     @staticmethod
-    def _flatten_gaussian_data(params: dict) -> npt.NDArray:
+    def _flatten_gaussian_data(params: dict[str, npt.NDArray]) -> npt.NDArray:
         """シェーダに渡すためにガウシアンデータをフラット化する。"""
         return np.concatenate(
             [

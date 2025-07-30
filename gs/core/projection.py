@@ -167,7 +167,7 @@ def compute_cov_2d(
     return prod_mat @ cov_3d @ prod_mat.T
 
 
-def compute_cov_2d_inv_flat(cov_2d):
+def compute_cov_2d_inv_flat(cov_2d: jax.Array) -> jax.Array:
     """2D共分散行列の逆行列をフラットな形式で計算"""
     a = cov_2d[0, 0]
     b = cov_2d[0, 1]
