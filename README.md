@@ -56,6 +56,11 @@ By default, the trained parameter files are saved as `./output/params_final` in 
 
 If you encounter Out of Memory errors, reduce memory consumption by adjusting the following:
 
+- **Adjust tile chunk processing**
+  - Modify `tile_chanks` in `./config/default.json` (default: 1)
+  - Divides memory-intensive batch processing into smaller chunks. Start with 2 and adjust to an appropriate value
+  - Smaller values result in faster execution due to sequential processing of divided chunks
+
 - **Reduce image resolution** (recommended: ~1000x600 pixels)
   ```bash
   uv run train.py <colmap_dataset_path> -e <n_epochs> --image_scale 0.7
