@@ -98,17 +98,9 @@ def rasterize_tile_data(
     ii, jj = jnp.mgrid[0:tile_size, 0:tile_size]
     pixel_coords = jnp.stack([upperleft_coord[0] + jj + 0.5, upperleft_coord[1] + ii + 0.5], axis=2)
 
-    image_buffer = jax.vmap(
-        jax.vmap(_render_pixel, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
-    )(pixel_coords, depth_decending_indices, gaussians, background)
+    image_buffer = render_pixel_vmap(pixel_coords, depth_decending_indices, gaussians, background)
 
     return image_buffer
-
-
-rasterize_tile_data_vmap = jax.vmap(
-    jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None)),
-    in_axes=(0, 0, None, None, None),
-)
 
 
 def _depth_sorted_indices(
@@ -135,6 +127,7 @@ def _create_tile_depth_decending_indices_batch(
     tile_index_batch: jax.Array,
     tile_size: int,
     tile_max_gs_num: int,
+    tile_chanks: int,
 ) -> jax.Array:
     # ガウシアンの所属するタイルのインデックスを計算
     gauss_max_eigvals = jax.vmap(analytical_max_eigenvalue)(gaussians["covs_2d"])
@@ -146,10 +139,13 @@ def _create_tile_depth_decending_indices_batch(
         jnp.int32
     )  # [[x_low_idx, y_low_idx], [x_high_idx, y_high_idx]]
 
-    return jax.vmap(
-        jax.vmap(_depth_sorted_indices, in_axes=(0, None, None, None)),
-        in_axes=(0, None, None, None),
-    )(tile_index_batch, gaussian_index_intervals, gaussians["depths"], tile_max_gs_num)
+    return jax.lax.map(
+        lambda x: depth_sorted_indices_vmap(
+            x, gaussian_index_intervals, gaussians["depths"], tile_max_gs_num
+        ),
+        tile_index_batch,
+        batch_size=(tile_index_batch.shape[0] + tile_chanks - 1) // tile_chanks,
+    )
 
 
 def build_tile_data(
@@ -157,6 +153,7 @@ def build_tile_data(
     img_shape: tuple[int, int],
     tile_size: int,
     tile_max_gs_num: int,
+    tile_chanks: int,
 ) -> tuple[jax.Array, jax.Array]:
     height_split_num = (img_shape[0] + tile_size - 1) // tile_size
     width_split_num = (img_shape[1] + tile_size - 1) // tile_size
@@ -169,6 +166,7 @@ def build_tile_data(
         tile_index_batch,
         tile_size,
         tile_max_gs_num,
+        tile_chanks,
     )
 
     # タイルごとの左上のピクセル座標値を作成
@@ -191,18 +189,20 @@ def rasterize(gaussians: dict[str, jax.Array], consts: dict[str, Any]) -> jax.Ar
     background = consts["background"]
     tile_size = consts["tile_size"]
     tile_max_gs_num = consts["tile_max_gs_num"]
+    tile_chanks = consts["tile_chanks"]
 
     # タイルごとに分割
     tile_depth_decending_indices_batch, tile_upperleft_coord_batch = build_tile_data(
-        gaussians, img_shape, tile_size, tile_max_gs_num
+        gaussians, img_shape, tile_size, tile_max_gs_num, tile_chanks
     )
 
-    image_buffer_batch = rasterize_tile_data_vmap(
-        tile_depth_decending_indices_batch,
-        tile_upperleft_coord_batch,
-        gaussians,
-        background,
-        tile_size,
+    image_buffer_batch = jax.lax.map(
+        lambda args: rasterize_tile_data_vmap(args[0], args[1], gaussians, background, tile_size),
+        (
+            tile_depth_decending_indices_batch,
+            tile_upperleft_coord_batch,
+        ),
+        batch_size=(tile_upperleft_coord_batch.shape[0] + tile_chanks - 1) // tile_chanks,
     )
 
     # タイルごとのバッファを結合
@@ -214,3 +214,10 @@ def rasterize(gaussians: dict[str, jax.Array], consts: dict[str, Any]) -> jax.Ar
     )[: img_shape[0], : img_shape[1]]
 
     return final_buffer
+
+
+rasterize_tile_data_vmap = jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None))
+depth_sorted_indices_vmap = jax.vmap(_depth_sorted_indices, in_axes=(0, None, None, None))
+render_pixel_vmap = jax.vmap(
+    jax.vmap(_render_pixel, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
+)
