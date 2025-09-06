@@ -11,6 +11,6 @@
   "densify_until_iter": 15000,
   "densification_interval": 1500,
   "tile_size": 16,
-  "tile_max_gs_num_factor": 7.0,
+  "tile_max_gs_num_factor": 3.5,
   "tile_chanks": 1
 }

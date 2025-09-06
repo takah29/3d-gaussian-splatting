@@ -89,9 +89,12 @@ class GsConfig:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
     def set_tile_max_gs_num(self, n_gaussians: int) -> None:
-        height, width = self.img_shape
-        n_tiles = (height // self.tile_size) * (width // self.tile_size)
-        self.tile_max_gs_num = int(self.tile_max_gs_num_factor * n_gaussians / n_tiles)
+        base_tile_size = 16
+        base_gaussian_num = 1000
+        tile_scale = self.tile_size / base_tile_size
+        self.tile_max_gs_num = int(
+            tile_scale**2 * self.tile_max_gs_num_factor * n_gaussians / base_gaussian_num
+        )
 
     @classmethod
     def from_json_file(cls, json_path: Path) -> "GsConfig":
