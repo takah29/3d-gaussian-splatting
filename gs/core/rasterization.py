@@ -111,38 +111,28 @@ rasterize_tile_data_vmap = jax.vmap(
 )
 
 
-def _create_tile_depth_map(
+def _depth_sorted_indices(
+    tile_index: jax.Array,
+    gaussian_index_intervals: jax.Array,
     gaussian_depth: jax.Array,
-    gaussian_idx_interval: jax.Array,
-    height_split_num: int,
-    width_split_num: int,
+    tile_max_gs_num: int,
 ) -> jax.Array:
-    inf_depth_map = jnp.full((height_split_num, width_split_num), jnp.inf)
-
-    start_w, start_h = gaussian_idx_interval[0, 0], gaussian_idx_interval[0, 1]  # order (x, y)
-    end_w, end_h = gaussian_idx_interval[1, 0], gaussian_idx_interval[1, 1]
-
-    # インデックスグリッドを作成
-    h_indices = jnp.arange(inf_depth_map.shape[0])[:, None]
-    w_indices = jnp.arange(inf_depth_map.shape[1])[None, :]
-
-    # 更新範囲内かどうかのマスクを作成
+    """upperleft_coordがgaussian_index_intervalsに入っているか判定し"""
     mask = (
-        (h_indices >= start_h)
-        & (h_indices <= end_h)
-        & (w_indices >= start_w)
-        & (w_indices <= end_w)
-        & (gaussian_depth > 0.2)
+        (gaussian_index_intervals[:, 0, 0] <= tile_index[0])
+        & (tile_index[0] <= gaussian_index_intervals[:, 1, 0])
+        & (gaussian_index_intervals[:, 0, 1] <= tile_index[1])
+        & (tile_index[1] <= gaussian_index_intervals[:, 1, 1])
+        & (gaussian_depth > 0.2)  # Culling Gaussians closer to the camera
     )
-
-    # ガウシアンのデプスで更新
-    return jnp.where(mask, gaussian_depth, inf_depth_map)
+    depth_arr = jnp.where(mask, gaussian_depth, jnp.inf)
+    tile_inverse_depth_topk, tile_depth_topk_indices = jax.lax.top_k(-depth_arr, k=tile_max_gs_num)
+    return jnp.where(tile_inverse_depth_topk == -jnp.inf, -1, tile_depth_topk_indices)
 
 
 def _create_tile_depth_decending_indices_batch(
     gaussians: dict[str, jax.Array],
-    height_split_num: int,
-    width_split_num: int,
+    tile_index_batch: jax.Array,
     tile_size: int,
     tile_max_gs_num: int,
 ) -> jax.Array:
@@ -156,14 +146,10 @@ def _create_tile_depth_decending_indices_batch(
         jnp.int32
     )  # [[x_low_idx, y_low_idx], [x_high_idx, y_high_idx]]
 
-    tile_depth_maps = jax.vmap(_create_tile_depth_map, in_axes=(0, 0, None, None), out_axes=2)(
-        gaussians["depths"], gaussian_index_intervals, height_split_num, width_split_num
-    )
-    tile_inverse_depth_topk_batch, tile_depth_topk_indices_batch = jax.lax.top_k(
-        -tile_depth_maps, k=tile_max_gs_num
-    )
-
-    return jnp.where(tile_inverse_depth_topk_batch == -jnp.inf, -1, tile_depth_topk_indices_batch)
+    return jax.vmap(
+        jax.vmap(_depth_sorted_indices, in_axes=(0, None, None, None)),
+        in_axes=(0, None, None, None),
+    )(tile_index_batch, gaussian_index_intervals, gaussians["depths"], tile_max_gs_num)
 
 
 def build_tile_data(
@@ -175,17 +161,18 @@ def build_tile_data(
     height_split_num = (img_shape[0] + tile_size - 1) // tile_size
     width_split_num = (img_shape[1] + tile_size - 1) // tile_size
 
+    ii, jj = jnp.mgrid[0:height_split_num, 0:width_split_num]  # iiがy軸、jjがx軸
+    tile_index_batch = jnp.stack([jj, ii], axis=2)
+
     tile_depth_decending_indices_batch = _create_tile_depth_decending_indices_batch(
         gaussians,
-        height_split_num,
-        width_split_num,
-        tile_size=tile_size,
-        tile_max_gs_num=tile_max_gs_num,
+        tile_index_batch,
+        tile_size,
+        tile_max_gs_num,
     )
 
-    # タイルごとの左上の座標値を計算
-    ii, jj = jnp.mgrid[0:height_split_num, 0:width_split_num]  # iiがy軸、jjがx軸
-    tile_upperleft_coord_batch = jnp.stack([jj * tile_size, ii * tile_size], axis=2)
+    # タイルごとの左上のピクセル座標値を作成
+    tile_upperleft_coord_batch = tile_index_batch * tile_size
 
     return (
         tile_depth_decending_indices_batch,
