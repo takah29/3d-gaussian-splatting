@@ -8,6 +8,7 @@ from optax import GradientTransformationExtraArgs, OptState, Params
 from gs.core.loss_function import gs_loss
 from gs.core.projection import project
 from gs.core.rasterization import rasterize
+from gs.core.tiling_and_sorting import build_tile_data
 from gs.utils import get_corrected_params
 
 
@@ -26,7 +27,17 @@ def make_updater(
     ) -> jax.Array:
         """密度制御のためのView-Space Gradientsを中間勾配として取得するための損失関数"""
         projected_gaussians = {"means_2d": means_2d, **fixed_params_2d}
-        output = rasterize(projected_gaussians, consts)
+        tile_depth_decending_indices_batch, tile_upperleft_coord_batch = build_tile_data(
+            projected_gaussians, consts
+        )
+
+        output = rasterize(
+            projected_gaussians,
+            tile_depth_decending_indices_batch,
+            tile_upperleft_coord_batch,
+            consts,
+        )
+
         jax.debug.callback(callback, output)
         loss = gs_loss(output, target)
         return loss
@@ -81,6 +92,15 @@ def make_render(
             active_sh_degree=active_sh_degree,  # type: ignore[arg-type]
         )
 
-        return rasterize(projected_gaussians, consts)
+        tile_depth_decending_indices_batch, tile_upperleft_coord_batch = build_tile_data(
+            projected_gaussians, consts
+        )
+
+        return rasterize(
+            projected_gaussians,
+            tile_depth_decending_indices_batch,
+            tile_upperleft_coord_batch,
+            consts,
+        )
 
     return jax.jit(render) if jit else render
