@@ -1,3 +1,12 @@
+"""This file implements a custom VJP version for 3DGS color computation.
+
+It has higher memory usage and slower processing compared to the automatic differentiation version,
+so it is not used. It stores intermediate variables computed during forward pass and performs
+VJP calculations in parallel without using jax.lax.scan during backward pass.
+
+Reference: https://github.com/scomup/EasyGaussianSplatting
+"""
+
 from functools import partial
 from typing import Any
 
