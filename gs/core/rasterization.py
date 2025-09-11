@@ -22,7 +22,7 @@ def compute_gaussian_weight(
         dx * dx * a11 + 2 * dx * dy * a12 + dy * dy * a22,
     )
 
-    return jnp.minimum(0.99, jnp.exp(-0.5 * mahal_dist) * opacity)
+    return jnp.minimum(0.99, jnp.exp(-0.5 * mahal_dist) * opacity[0])
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
@@ -32,9 +32,6 @@ def compute_color(
     gaussians: dict[str, jax.Array],
     background: tuple[float, float, float],
 ) -> jax.Array:
-    pixel_color = jnp.zeros((3,), dtype=jnp.float32)
-    tau = jnp.ones((1,), dtype=jnp.float32)
-
     means_2d = gaussians["means_2d"][depth_decending_indices]
     covs_2d_inv_flat = gaussians["covs_2d_inv_flat"][depth_decending_indices]
     opacities = gaussians["opacities"][depth_decending_indices]
@@ -58,7 +55,7 @@ def compute_color(
             return updated_pixel_color, updated_tau
 
         updated_pixel_color, updated_tau = jax.lax.cond(
-            (gaussian_idx >= 0) & (gaussian_weight[0] > 1.0 / 255.0) & (tau[0] > 1e-3),
+            (gaussian_idx >= 0) & (gaussian_weight > 1.0 / 255.0) & (tau > 1e-3),
             true_fun,
             lambda pixel_color, tau: (pixel_color, tau),
             pixel_color,
@@ -67,12 +64,20 @@ def compute_color(
 
         return (updated_pixel_color, updated_tau), None
 
+    pixel_color = jnp.zeros((3,), dtype=jnp.float32)
+    tau = 1.0
+
     (pixel_color, tau), _ = jax.lax.scan(
         body_fun,
         (pixel_color, tau),
         (depth_decending_indices, gaussian_weight_batch, colors),
     )
     return pixel_color + jnp.asarray(background) * tau
+
+
+compute_color_vmap = jax.vmap(
+    jax.vmap(compute_color, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
+)
 
 
 def rasterize_tile_data(
@@ -88,6 +93,9 @@ def rasterize_tile_data(
     image_buffer = compute_color_vmap(pixel_coords, depth_decending_indices, gaussians, background)
 
     return image_buffer
+
+
+rasterize_tile_data_vmap = jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None))
 
 
 def rasterize(
@@ -125,9 +133,3 @@ def rasterize(
     )[: img_shape[0], : img_shape[1]]
 
     return final_buffer
-
-
-rasterize_tile_data_vmap = jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None))
-compute_color_vmap = jax.vmap(
-    jax.vmap(compute_color, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
-)
