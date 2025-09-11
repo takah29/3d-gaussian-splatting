@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-def _gaussian_weight(
+def compute_gaussian_weight(
     pixel_coord: jax.Array,
     mean_2d: jax.Array,
     cov_2d_inv_flat: jax.Array,
@@ -26,7 +26,7 @@ def _gaussian_weight(
 
 
 @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-def _render_pixel(
+def compute_color(
     pixel_coord: jax.Array,
     depth_decending_indices: jax.Array,
     gaussians: dict[str, jax.Array],
@@ -40,7 +40,7 @@ def _render_pixel(
     opacities = gaussians["opacities"][depth_decending_indices]
     colors = gaussians["colors"][depth_decending_indices]
 
-    gaussian_weight_batch = jax.vmap(_gaussian_weight, in_axes=(None, 0, 0, 0))(
+    gaussian_weight_batch = jax.vmap(compute_gaussian_weight, in_axes=(None, 0, 0, 0))(
         pixel_coord, means_2d, covs_2d_inv_flat, opacities
     )
 
@@ -85,7 +85,7 @@ def rasterize_tile_data(
     ii, jj = jnp.mgrid[0:tile_size, 0:tile_size]
     pixel_coords = jnp.stack([upperleft_coord[0] + jj + 0.5, upperleft_coord[1] + ii + 0.5], axis=2)
 
-    image_buffer = render_pixel_vmap(pixel_coords, depth_decending_indices, gaussians, background)
+    image_buffer = compute_color_vmap(pixel_coords, depth_decending_indices, gaussians, background)
 
     return image_buffer
 
@@ -128,6 +128,6 @@ def rasterize(
 
 
 rasterize_tile_data_vmap = jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None))
-render_pixel_vmap = jax.vmap(
-    jax.vmap(_render_pixel, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
+compute_color_vmap = jax.vmap(
+    jax.vmap(compute_color, in_axes=(0, None, None, None)), in_axes=(0, None, None, None)
 )
