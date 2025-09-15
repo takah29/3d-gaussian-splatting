@@ -35,7 +35,6 @@ def compute_color(
     means_2d = gaussians["means_2d"][depth_decending_indices]
     covs_2d_inv_flat = gaussians["covs_2d_inv_flat"][depth_decending_indices]
     opacities = gaussians["opacities"][depth_decending_indices]
-    colors = gaussians["colors"][depth_decending_indices]
 
     gaussian_weight_batch = jax.vmap(compute_gaussian_weight, in_axes=(None, 0, 0, 0))(
         pixel_coord, means_2d, covs_2d_inv_flat, opacities
@@ -45,10 +44,10 @@ def compute_color(
     final_tau = tau_arr[-1]
     tau_shift_arr = jnp.hstack([jnp.array((1.0,)), tau_arr[:-1]])
     mask = depth_decending_indices != -1
+    contribution_arr = tau_shift_arr * gaussian_weight_batch * mask
 
-    pixel_color = jnp.sum(
-        colors * tau_shift_arr[:, None] * gaussian_weight_batch[:, None] * mask[:, None], axis=0
-    )
+    colors = gaussians["colors"][depth_decending_indices]
+    pixel_color = jnp.sum(colors * contribution_arr[:, None], axis=0)
 
     return pixel_color + jnp.asarray(background) * final_tau
 
@@ -58,6 +57,7 @@ compute_color_vmap = jax.vmap(
 )
 
 
+@partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable, static_argnums=(3, 4))
 def rasterize_tile_data(
     depth_decending_indices: jax.Array,
     upperleft_coord: jax.Array,
