@@ -41,38 +41,16 @@ def compute_color(
         pixel_coord, means_2d, covs_2d_inv_flat, opacities
     )
 
-    @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-    def body_fun(
-        carry: tuple[jax.Array, jax.Array], inputs: tuple[jax.Array, jax.Array, jax.Array]
-    ) -> tuple[tuple[jax.Array, jax.Array], None]:
-        pixel_color, tau = carry
-        gaussian_idx, gaussian_weight, color = inputs
+    tau_arr = jax.lax.cumprod(1.0 - gaussian_weight_batch)
+    final_tau = tau_arr[-1]
+    tau_shift_arr = jnp.hstack([jnp.array((1.0,)), tau_arr[:-1]])
+    mask = depth_decending_indices != -1
 
-        @partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
-        def true_fun(pixel_color: jax.Array, tau: jax.Array) -> tuple[jax.Array, jax.Array]:
-            updated_pixel_color = pixel_color + color * gaussian_weight * tau
-            updated_tau = tau * (1.0 - gaussian_weight)
-            return updated_pixel_color, updated_tau
-
-        updated_pixel_color, updated_tau = jax.lax.cond(
-            (gaussian_idx >= 0) & (gaussian_weight > 1.0 / 255.0) & (tau > 1e-3),
-            true_fun,
-            lambda pixel_color, tau: (pixel_color, tau),
-            pixel_color,
-            tau,
-        )
-
-        return (updated_pixel_color, updated_tau), None
-
-    pixel_color = jnp.zeros((3,), dtype=jnp.float32)
-    tau = 1.0
-
-    (pixel_color, tau), _ = jax.lax.scan(
-        body_fun,
-        (pixel_color, tau),
-        (depth_decending_indices, gaussian_weight_batch, colors),
+    pixel_color = jnp.sum(
+        colors * tau_shift_arr[:, None] * gaussian_weight_batch[:, None] * mask[:, None], axis=0
     )
-    return pixel_color + jnp.asarray(background) * tau
+
+    return pixel_color + jnp.asarray(background) * final_tau
 
 
 compute_color_vmap = jax.vmap(
