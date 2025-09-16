@@ -75,7 +75,7 @@ class GsRendererJax(GsRendererBase):
         )
 
         # JAX版特有のレンダリング設定
-        self.consts["tile_max_gs_num"] = 3 * self._calc_tile_max_gs_num(
+        self.consts["tile_max_gs_num"] = self._calc_tile_max_gs_num(
             self.consts
         )  # 学習時よりタイルあたりのガウシアン数を増やす
 
@@ -99,9 +99,15 @@ class GsRendererJax(GsRendererBase):
 
     @staticmethod
     def _calc_tile_max_gs_num(consts: dict[str, Any]) -> int:
-        height, width = consts["img_shape"]
-        n_tiles = (height // consts["tile_size"]) * (width // consts["tile_size"])
-        return int(consts["tile_max_gs_num_factor"] * consts["max_gaussians"] / n_tiles)
+        base_tile_size = 16
+        base_gaussian_num = 1000
+        tile_scale = consts["tile_size"] / base_tile_size
+        return int(
+            tile_scale**2
+            * consts["tile_max_gs_num_factor"]
+            * consts["max_gaussians"]
+            / base_gaussian_num
+        )
 
     def render(
         self,
