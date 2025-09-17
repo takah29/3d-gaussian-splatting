@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 import optax  # type: ignore[import-untyped]
 from optax import GradientTransformationExtraArgs, OptState, Params
 
@@ -19,7 +20,7 @@ def make_updater(
     *,
     jit: bool = True,
 ) -> Callable[
-    [Params, dict[str, jax.Array], jax.Array, OptState, int],
+    [Params, dict[str, jax.Array], jax.Array, OptState, int, float, jax.Array],
     tuple[Params, OptState, jax.Array, dict[str, jax.Array]],
 ]:
     def loss_fn_for_mean2d(
@@ -47,10 +48,21 @@ def make_updater(
         view: dict[str, jax.Array],
         target: jax.Array,
         active_sh_degree: jax.Array,
+        drop_rate: float,
+        key: jax.Array,
     ) -> tuple[jax.Array, dict[str, jax.Array]]:
         corrected_params = get_corrected_params(raw_params)
         projected_gaussians = project(
             corrected_params, **view, consts=consts, active_sh_degree=active_sh_degree
+        )
+        n_gaussians = projected_gaussians["means_2d"].shape[0]
+        drop_indices = jax.random.choice(
+            key, n_gaussians, shape=(int(n_gaussians * drop_rate),), replace=False
+        )
+        drop_mask = jnp.isin(jnp.arange(n_gaussians), drop_indices)
+
+        projected_gaussians["opacities"] = jnp.where(
+            drop_mask[:, None], 0.0, projected_gaussians["opacities"] / (1.0 - drop_rate)
         )
 
         # View-Space Gradientsを中間勾配として取得する
@@ -70,15 +82,21 @@ def make_updater(
         target: jax.Array,
         opt_state: OptState,
         active_sh_degree: int,
+        drop_rate: float,
+        key: jax.Array,
     ) -> tuple[Params, OptState, jax.Array, dict[str, jax.Array]]:
         (loss, viewspace_grads), grads = compute_loss_and_grad(
-            raw_params, view, target, active_sh_degree
+            raw_params, view, target, active_sh_degree, drop_rate, key
         )
         updates, opt_state = optimizer.update(grads, opt_state, raw_params)
         raw_params = optax.apply_updates(raw_params, updates)
         return raw_params, opt_state, loss, viewspace_grads
 
-    return jax.jit(update, donate_argnames=("raw_params",)) if jit else update
+    return (
+        jax.jit(update, donate_argnames=("raw_params",), static_argnames=("drop_rate",))
+        if jit
+        else update
+    )
 
 
 def make_render(

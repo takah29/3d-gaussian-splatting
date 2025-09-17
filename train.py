@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import jax
 import numpy as np
 import optax  # type: ignore[import-untyped]
 
@@ -73,18 +74,22 @@ def main() -> None:  # noqa: PLR0915
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
     update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
     active_sh_degree = 0
-
+    drop_rate = 0.2
+    key = jax.random.PRNGKey(1234)
     for i, (view, target) in enumerate(image_dataloader, start=1):
         if i in (1000, 2000, 3000):
             active_sh_degree += 1
             print(f"Active SH degree increased to {active_sh_degree}")
 
+        key, subkey = jax.random.split(key)
         raw_params, opt_state, loss, viewspace_grads = update(
             raw_params,
             view,  # type: ignore[arg-type]
             target,  # type: ignore[arg-type]
             opt_state,
             active_sh_degree,
+            drop_rate,
+            subkey,
         )
         print(f"Iter {i}: loss={loss}")
 
