@@ -6,7 +6,11 @@ import numpy as np
 import optax  # type: ignore[import-untyped]
 
 from gs.config import GsConfig
-from gs.core.density_control import densify_gaussians, prune_gaussians
+from gs.core.density_control import (
+    densify_gaussians,
+    prune_gaussians,
+    prune_gaussians_by_contribution_scores,
+)
 from gs.function_factory import make_render, make_updater
 from gs.helper import build_params, get_optimizer, print_info
 from gs.utils import DataLogger, get_corrected_params, save_params, to_numpy_dict
@@ -71,18 +75,23 @@ def main() -> None:  # noqa: PLR0915
 
     update = make_updater(consts, optimizer, jit=True)
     render = make_render(consts, active_sh_degree=3, jit=True)
+
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
-    update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
+    view_space_grads_norm_counts = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
+    contribution_scores_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
+
     active_sh_degree = 0
     drop_rate = 0.2
     key = jax.random.PRNGKey(1234)
+    dencification_count = 0
+
     for i, (view, target) in enumerate(image_dataloader, start=1):
         if i in (1000, 2000, 3000):
             active_sh_degree += 1
             print(f"Active SH degree increased to {active_sh_degree}")
 
         key, subkey = jax.random.split(key)
-        raw_params, opt_state, loss, viewspace_grads = update(
+        raw_params, opt_state, loss, contribution_scores, viewspace_grads = update(
             raw_params,
             view,  # type: ignore[arg-type]
             target,  # type: ignore[arg-type]
@@ -108,7 +117,10 @@ def main() -> None:  # noqa: PLR0915
             # 密度化に使用する勾配ノルムを加算
             view_space_grads_norm = np.linalg.norm(np.asarray(viewspace_grads), axis=1)
             view_space_grads_norm_acc += view_space_grads_norm
-            update_count_arr += view_space_grads_norm > 0.0
+            view_space_grads_norm_counts += view_space_grads_norm > 0.0
+
+            # 貢献度の加算
+            contribution_scores_acc += np.asarray(contribution_scores)
 
         # ガウシアンの分割と除去
         if i >= consts["densify_from_iter"] and i % consts["densification_interval"] == 0:
@@ -119,25 +131,27 @@ def main() -> None:  # noqa: PLR0915
             cloned_num, splitted_num = 0, 0
             if i <= consts["densify_until_iter"]:
                 view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
-                update_count_arr = np.array(update_count_arr)
+                view_space_grads_norm_counts = np.array(view_space_grads_norm_counts)
 
                 enable_mask = view_space_grads_norm_acc > 0.0
                 viewspace_grads_mean_norm = np.zeros(
                     raw_params["means3d"].shape[0], dtype=np.float32
                 )
                 viewspace_grads_mean_norm[enable_mask] = (
-                    view_space_grads_norm_acc[enable_mask] / update_count_arr[enable_mask]
+                    view_space_grads_norm_acc[enable_mask]
+                    / view_space_grads_norm_counts[enable_mask]
                 )
 
-                raw_params, cloned_num, splitted_num = densify_gaussians(
-                    raw_params, viewspace_grads_mean_norm, consts
+                raw_params, contribution_scores_acc, cloned_num, splitted_num = densify_gaussians(
+                    raw_params, contribution_scores_acc, viewspace_grads_mean_norm, consts
                 )
 
-            # alpha値が低いガウシアンの消去
-            raw_params, pruned_num = prune_gaussians(raw_params, consts)
+                dencification_count += 1
 
-            # タイルあたりのガウシアン数を更新
-            gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
+            # alpha値が低いガウシアンの除去
+            raw_params, contribution_scores_acc, pruned_num = prune_gaussians(
+                raw_params, contribution_scores_acc, consts
+            )
 
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
@@ -149,12 +163,35 @@ def main() -> None:  # noqa: PLR0915
             )
             print("======================================")
 
+            # 貢献度の低いガウシアンの除去
+            if (
+                dencification_count % consts["dencification_counts_for_contribution_pruning"] == 0
+                and i <= consts["densify_until_iter"]
+            ):
+                print("===== Contribution Pruning ======")
+                raw_params, pruned_num = prune_gaussians_by_contribution_scores(
+                    raw_params, contribution_scores_acc, consts
+                )
+
+                print(f"pruned_num: {pruned_num}")
+                print(
+                    f"num of gaussian: {raw_params['means3d'].shape[0] + pruned_num} "
+                    f"-> {raw_params['means3d'].shape[0]}"
+                )
+                print("======================================")
+
+                # 貢献度の蓄積をリセット
+                contribution_scores_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
+
             # 勾配ノルムの蓄積をリセット
             view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
-            update_count_arr = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
+            view_space_grads_norm_counts = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
 
             # paramsのデータ数が変わるのでoptimizerを初期化する
             opt_state = optimizer.init(raw_params)
+
+            # タイルあたりのガウシアン数を更新
+            gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
 
     save_params(
         save_dir / "params_final",

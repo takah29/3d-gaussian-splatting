@@ -21,27 +21,27 @@ def make_updater(
     jit: bool = True,
 ) -> Callable[
     [Params, dict[str, jax.Array], jax.Array, OptState, int, float, jax.Array],
-    tuple[Params, OptState, jax.Array, dict[str, jax.Array]],
+    tuple[Params, OptState, jax.Array, jax.Array, dict[str, jax.Array]],
 ]:
     def loss_fn_for_mean2d(
         means_2d: jax.Array, fixed_params_2d: dict[str, jax.Array], target: jax.Array
-    ) -> jax.Array:
+    ) -> tuple[jax.Array, jax.Array]:
         """密度制御のためのView-Space Gradientsを中間勾配として取得するための損失関数"""
         projected_gaussians = {"means_2d": means_2d, **fixed_params_2d}
         tile_depth_decending_indices_batch, tile_upperleft_coord_batch = build_tile_data(
             projected_gaussians, consts
         )
 
-        output = rasterize(
+        image, contribution_scores = rasterize(
             projected_gaussians,
             tile_depth_decending_indices_batch,
             tile_upperleft_coord_batch,
             consts,
         )
 
-        jax.debug.callback(callback, output)
-        loss = gs_loss(output, target)
-        return loss
+        jax.debug.callback(callback, image)
+        loss = gs_loss(image, target)
+        return loss, contribution_scores
 
     def loss_fn_for_params(
         raw_params: dict[str, jax.Array],
@@ -50,7 +50,7 @@ def make_updater(
         active_sh_degree: jax.Array,
         drop_rate: float,
         key: jax.Array,
-    ) -> tuple[jax.Array, dict[str, jax.Array]]:
+    ) -> tuple[jax.Array, tuple[jax.Array, dict[str, jax.Array]]]:
         corrected_params = get_corrected_params(raw_params)
         projected_gaussians = project(
             corrected_params, **view, consts=consts, active_sh_degree=active_sh_degree
@@ -68,11 +68,11 @@ def make_updater(
         # View-Space Gradientsを中間勾配として取得する
         means_2d = projected_gaussians["means_2d"]
         fixed_params_2d = {k: v for k, v in projected_gaussians.items() if k != "means_2d"}
-        loss, viewspace_grads = jax.value_and_grad(loss_fn_for_mean2d)(
-            means_2d, fixed_params_2d, target
-        )
+        (loss, contribution_scores), viewspace_grads = jax.value_and_grad(
+            loss_fn_for_mean2d, has_aux=True
+        )(means_2d, fixed_params_2d, target)
 
-        return loss, viewspace_grads  # viewspace_gradsは補助データとして返す
+        return loss, (contribution_scores, viewspace_grads)  # viewspace_gradsは補助データとして返す
 
     compute_loss_and_grad = jax.value_and_grad(loss_fn_for_params, has_aux=True)
 
@@ -84,13 +84,13 @@ def make_updater(
         active_sh_degree: int,
         drop_rate: float,
         key: jax.Array,
-    ) -> tuple[Params, OptState, jax.Array, dict[str, jax.Array]]:
-        (loss, viewspace_grads), grads = compute_loss_and_grad(
+    ) -> tuple[Params, OptState, jax.Array, jax.Array, dict[str, jax.Array]]:
+        (loss, (contribution_scores, viewspace_grads)), grads = compute_loss_and_grad(
             raw_params, view, target, active_sh_degree, drop_rate, key
         )
         updates, opt_state = optimizer.update(grads, opt_state, raw_params)
         raw_params = optax.apply_updates(raw_params, updates)
-        return raw_params, opt_state, loss, viewspace_grads
+        return raw_params, opt_state, loss, contribution_scores, viewspace_grads
 
     return (
         jax.jit(update, donate_argnames=("raw_params",), static_argnames=("drop_rate",))
@@ -114,11 +114,13 @@ def make_render(
             projected_gaussians, consts
         )
 
-        return rasterize(
+        image_buffer, _ = rasterize(
             projected_gaussians,
             tile_depth_decending_indices_batch,
             tile_upperleft_coord_batch,
             consts,
         )
+
+        return image_buffer
 
     return jax.jit(render) if jit else render

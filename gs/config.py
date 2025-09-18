@@ -23,6 +23,8 @@ class GsConfig:
         densify_from_iter: 密度化開始イテレーション
         densify_until_iter: 密度化終了イテレーション
         densification_interval: 密度化間隔
+        dencification_counts_for_contribution_pruning: 密度化回数ごとに貢献度による枝刈を行う
+        contribution_pruning_coeff: float: 貢献度による枝刈り係数（中央値に対する割合）
         tile_size: タイルサイズ
         tile_max_gs_num_factor: タイルあたりの最大ガウシアン数を決める係数
         tile_chanks: メモリ消費量削減のためタイル分割数
@@ -39,6 +41,8 @@ class GsConfig:
     densify_from_iter: int
     densify_until_iter: int
     densification_interval: int
+    dencification_counts_for_contribution_pruning: int
+    contribution_pruning_coeff: float
     tile_size: int
     tile_max_gs_num_factor: int
     tile_chanks: int

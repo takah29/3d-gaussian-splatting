@@ -31,7 +31,7 @@ def compute_color(
     depth_decending_indices: jax.Array,
     gaussians: dict[str, jax.Array],
     background: tuple[float, float, float],
-) -> jax.Array:
+) -> tuple[jax.Array, jax.Array]:
     means_2d = gaussians["means_2d"][depth_decending_indices]
     covs_2d_inv_flat = gaussians["covs_2d_inv_flat"][depth_decending_indices]
     opacities = gaussians["opacities"][depth_decending_indices]
@@ -49,7 +49,7 @@ def compute_color(
     colors = gaussians["colors"][depth_decending_indices]
     pixel_color = jnp.sum(colors * contribution_arr[:, None], axis=0)
 
-    return pixel_color + jnp.asarray(background) * final_tau
+    return pixel_color + jnp.asarray(background) * final_tau, contribution_arr
 
 
 compute_color_vmap = jax.vmap(
@@ -64,13 +64,15 @@ def rasterize_tile_data(
     gaussians: dict[str, jax.Array],
     background: tuple[float, float, float],
     tile_size: int,
-) -> jax.Array:
+) -> tuple[jax.Array, jax.Array]:
     ii, jj = jnp.mgrid[0:tile_size, 0:tile_size]
     pixel_coords = jnp.stack([upperleft_coord[0] + jj + 0.5, upperleft_coord[1] + ii + 0.5], axis=2)
 
-    image_buffer = compute_color_vmap(pixel_coords, depth_decending_indices, gaussians, background)
+    image_buffer, contribution_batch = compute_color_vmap(
+        pixel_coords, depth_decending_indices, gaussians, background
+    )
 
-    return image_buffer
+    return image_buffer, contribution_batch.sum(axis=(0, 1))
 
 
 rasterize_tile_data_vmap = jax.vmap(rasterize_tile_data, in_axes=(0, 0, None, None, None))
@@ -81,7 +83,7 @@ def rasterize(
     tile_depth_decending_indices_batch: jax.Array,
     tile_upperleft_coord_batch: jax.Array,
     consts: dict[str, Any],
-) -> jax.Array:
+) -> tuple[jax.Array, jax.Array]:
     """projectで射影した2Dガウシアンをラスタライズする.
 
     Note:
@@ -93,7 +95,7 @@ def rasterize(
     tile_size = consts["tile_size"]
     tile_chanks = consts["tile_chanks"]
 
-    image_buffer_batch = jax.lax.map(
+    image_buffer_batch, tile_contribution_batch = jax.lax.map(
         lambda args: rasterize_tile_data_vmap(args[0], args[1], gaussians, background, tile_size),
         (
             tile_depth_decending_indices_batch,
@@ -101,6 +103,15 @@ def rasterize(
         ),
         batch_size=(tile_upperleft_coord_batch.shape[0] + tile_chanks - 1) // tile_chanks,
     )
+
+    # ガウシアンの貢献度スコアを計算
+    flat_gaussian_indices = tile_depth_decending_indices_batch.reshape(-1)
+    contribution_scores = (
+        jnp.zeros(gaussians["means_2d"].shape[0])
+        .at[flat_gaussian_indices]
+        .add(tile_contribution_batch.reshape(-1))
+    )
+    # counts = jnp.zeros(gaussians["means_2d"].shape[0], jnp.int32).at[flat_gaussian_indices].add(1)
 
     # タイルごとのバッファを結合
     transposed = jnp.transpose(image_buffer_batch, (0, 2, 1, 3, 4))
@@ -110,4 +121,4 @@ def rasterize(
         transposed.shape[4],
     )[: img_shape[0], : img_shape[1]]
 
-    return final_buffer
+    return final_buffer, contribution_scores
