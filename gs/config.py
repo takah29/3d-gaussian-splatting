@@ -46,7 +46,6 @@ class GsConfig:
     tile_size: int
     tile_max_gs_num_factor: int
     tile_chanks: int
-    drop_rate: float
 
     img_shape: tuple[int, int] = field(init=False)  # 画像の高さと幅
     extent: float = field(init=False)  # シーンの大きさ

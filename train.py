@@ -7,9 +7,9 @@ import optax  # type: ignore[import-untyped]
 
 from gs.config import GsConfig
 from gs.core.density_control import (
-    densify_gaussians,
     prune_gaussians,
     prune_gaussians_by_contribution_scores,
+    split_gaussians_by_long_axis,
 )
 from gs.function_factory import make_render, make_updater
 from gs.helper import build_params, get_optimizer, print_info
@@ -81,15 +81,11 @@ def main() -> None:  # noqa: PLR0915
     contribution_scores_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
 
     active_sh_degree = 0
-    drop_rate = 0.2
+    drop_rate = 0.0
     key = jax.random.PRNGKey(1234)
     dencification_count = 0
 
     for i, (view, target) in enumerate(image_dataloader, start=1):
-        if i in (1000, 2000, 3000):
-            active_sh_degree += 1
-            print(f"Active SH degree increased to {active_sh_degree}")
-
         key, subkey = jax.random.split(key)
         raw_params, opt_state, loss, contribution_scores, viewspace_grads = update(
             raw_params,
@@ -128,7 +124,7 @@ def main() -> None:  # noqa: PLR0915
             # 配列の動的な処理を行うのでnumpy配列に変換
             raw_params = to_numpy_dict(raw_params)  # type: ignore[arg-type]
 
-            cloned_num, splitted_num = 0, 0
+            splitted_num = 0
             if i <= consts["densify_until_iter"]:
                 view_space_grads_norm_acc = np.array(view_space_grads_norm_acc)
                 view_space_grads_norm_counts = np.array(view_space_grads_norm_counts)
@@ -142,7 +138,7 @@ def main() -> None:  # noqa: PLR0915
                     / view_space_grads_norm_counts[enable_mask]
                 )
 
-                raw_params, contribution_scores_acc, cloned_num, splitted_num = densify_gaussians(
+                raw_params, contribution_scores_acc, splitted_num = split_gaussians_by_long_axis(
                     raw_params, contribution_scores_acc, viewspace_grads_mean_norm, consts
                 )
 
@@ -153,10 +149,8 @@ def main() -> None:  # noqa: PLR0915
                 raw_params, contribution_scores_acc, consts
             )
 
-            print(
-                f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
-            )
-            delta_num = cloned_num + splitted_num - pruned_num
+            print(f"splitted_num: {splitted_num}, pruned_num: {pruned_num}")
+            delta_num = splitted_num - pruned_num
             print(
                 f"num of gaussian: {raw_params['means3d'].shape[0] - delta_num} "
                 f"-> {raw_params['means3d'].shape[0]}"
@@ -192,6 +186,15 @@ def main() -> None:  # noqa: PLR0915
 
             # タイルあたりのガウシアン数を更新
             gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
+            update = make_updater(consts, optimizer, jit=True)
+            render = make_render(consts, active_sh_degree=3, jit=True)
+
+        # SH degreeとdrop rateを増やす
+        if i in (1000, 2000, 3000):
+            active_sh_degree += 1
+            drop_rate += 0.05
+            print(f"Active SH degree increased to {active_sh_degree}")
+            print(f"Drop Rate increased to {drop_rate}")
 
     save_params(
         save_dir / "params_final",
