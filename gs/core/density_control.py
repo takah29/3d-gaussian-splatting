@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
+from scipy.spatial.transform import Rotation
 from scipy.special import expit, logit
 
 from gs.core.projection import compute_cov_vmap
@@ -162,31 +163,31 @@ def split_gaussians_by_long_axis(
     target_params = {key: val[target_indices] for key, val in raw_params.items()}
     target_contribution_scores = contribution_scores_acc[target_indices]
 
-    covs_3d = compute_cov_vmap(
-        target_params["quats"] / np.linalg.norm(target_params["quats"], axis=-1, keepdims=True),
-        np.exp(target_params["scales"]),  # type: ignore[arg-type]
-    )
+    max_scale_indices = np.argmax(target_params["scales"], axis=1)
 
-    eigvals, eigvecs = np.linalg.eigh(np.asarray(covs_3d + np.eye(3) * 1e-3))
-    max_eigval_indices = np.argmax(eigvals, axis=1)
-    r_zero_vals = np.sqrt(eigvals)
-    l_zero_vals = r_zero_vals[np.arange(max_eigval_indices.shape[0]), max_eigval_indices]
-
-    new_scales_linear = 0.893 * r_zero_vals  # Rs = R₀ * sqrt(1 - 0.45²) ≈ 0.893 * R₀
-    new_scales_linear[np.arange(len(max_eigval_indices)), max_eigval_indices] = 0.55 * l_zero_vals
+    linear_scales = np.exp(target_params["scales"])
+    max_scales = linear_scales[np.arange(split_num), max_scale_indices]
+    d = 0.45 * max_scales
+    new_scales_linear = 0.893 * linear_scales  # Rs = R₀ * sqrt(1 - 0.45²) ≈ 0.893 * R₀
+    new_scales_linear[np.arange(split_num), max_scale_indices] = 0.55 * max_scales
     target_params["scales"] = np.log(new_scales_linear)
-
     target_params["opacities"] = logit(expit(target_params["opacities"]) * 0.6)
 
-    max_eigvecs = eigvecs[np.arange(max_eigval_indices.shape[0]), :, max_eigval_indices]
-    offset_vecs = 0.45 * l_zero_vals[:, None] * max_eigvecs
-    means_pos = target_params["means3d"] + offset_vecs
-    means_neg = target_params["means3d"] - offset_vecs
+    local_directions = np.zeros((split_num, 3))
+    local_directions[np.arange(split_num), max_scale_indices] = 1.0
+    quat_norms = np.linalg.norm(target_params["quats"], axis=1, keepdims=True)
+    rotation = Rotation.from_quat(target_params["quats"] / quat_norms)
+    world_directions = rotation.apply(local_directions)
+    world_directions /= np.linalg.norm(world_directions, axis=1, keepdims=True)
+
+    offset_vecs = d[:, None] * world_directions
+    child_positive_means = target_params["means3d"] + offset_vecs
+    child_negative_means = target_params["means3d"] - offset_vecs
 
     child_positive_params = target_params.copy()
-    child_positive_params["means3d"] = means_pos
+    child_positive_params["means3d"] = child_positive_means
     child_negative_params = target_params.copy()
-    child_negative_params["means3d"] = means_neg
+    child_negative_params["means3d"] = child_negative_means
 
     raw_params = {
         key: np.vstack(
