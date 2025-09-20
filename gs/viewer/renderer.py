@@ -229,7 +229,9 @@ class GsRendererGl(GsRendererBase):
         }
 
         vec3 compute_color_from_sh(vec3 direction, float sh_coeff[48]) {
-            float x = direction.x, y = direction.y, z = direction.z;
+            // Jax版と同様の実装を使うためにカメラ座標系をGL -> JAXへ変換
+            float x = direction.x, y = -direction.y, z = -direction.z;
+
             float xx = x * x, yy = y * y, zz = z * z, xy = x * y, yz = y * z, xz = x * z;
 
             float basis[16];
