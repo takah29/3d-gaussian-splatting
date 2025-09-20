@@ -121,9 +121,8 @@ def project_point(
 
 
 def _quat_to_rot(quat: jax.Array) -> jax.Array:
-    norm = jnp.linalg.norm(quat)
-    quat = jnp.where(norm > 1e-8, quat / norm, quat)  # type: ignore[reportAssignmentType]
-    return Rotation.from_quat(quat / norm).as_matrix()
+    """Convert normalized quaternion to rotation matrix."""
+    return Rotation.from_quat(quat).as_matrix()
 
 
 def compute_cov(quat: jax.Array, scale: jax.Array) -> jax.Array:

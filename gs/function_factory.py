@@ -10,7 +10,7 @@ from gs.core.loss_function import gs_loss
 from gs.core.projection import project
 from gs.core.rasterization import rasterize
 from gs.core.tiling_and_sorting import build_tile_data
-from gs.utils import get_corrected_params
+from gs.utils import fix_quaternions, get_corrected_params
 
 
 def make_updater(
@@ -90,6 +90,7 @@ def make_updater(
         )
         updates, opt_state = optimizer.update(grads, opt_state, raw_params)
         raw_params = optax.apply_updates(raw_params, updates)
+        raw_params = fix_quaternions(raw_params)  # type: ignore[arg-type]
         return raw_params, opt_state, loss, contribution_scores, viewspace_grads
 
     return (

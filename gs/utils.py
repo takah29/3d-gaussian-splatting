@@ -190,3 +190,26 @@ def get_corrected_params(raw_params: dict[str, Any]) -> dict[str, jax.Array]:
         "sh_coeffs": jnp.dstack((raw_params["sh_dc"], raw_params["sh_rest"])),
         "opacities": jax.nn.sigmoid(raw_params["opacities"]),
     }
+
+
+def fix_quaternions(params: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    """クォータニオンのゼロノルムやNaNを修正し、正規化する"""
+    quats = params["quats"]
+
+    nan_mask = jnp.isnan(quats).any(axis=1)
+    inf_mask = jnp.isinf(quats).any(axis=1)
+
+    quat_norms = jnp.linalg.norm(quats, axis=1, keepdims=True)
+    zero_norm_mask = quat_norms.squeeze() < 1e-8
+    invalid_mask = nan_mask | inf_mask | zero_norm_mask
+
+    # 無効なクォータニオンを単位クォータニオン [0, 0, 0, 1] で置き換え
+    unit_quat = jnp.array([0.0, 0.0, 0.0, 1.0])
+    safe_quats = jnp.where(invalid_mask[:, None], unit_quat[None, :], quats)
+
+    safe_norms = jnp.linalg.norm(safe_quats, axis=1, keepdims=True)
+    normalized_quats = safe_quats / safe_norms
+
+    params["quats"] = normalized_quats
+
+    return params
