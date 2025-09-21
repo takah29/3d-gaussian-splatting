@@ -35,13 +35,15 @@ def print_info(raw_params: dict[str, npt.NDArray]) -> None:
 
 
 def build_params(
-    colmap_data_path: Path, gs_config: GsConfig, image_scale: float, n_epochs: int
+    colmap_data_path: Path,
+    image_scale: float,
+    gs_config: GsConfig,
 ) -> tuple[dict[str, npt.NDArray], ImageViewDataLoader]:
     reconstruction_data, camera_params, image_batch = load_colmap_data(
         colmap_data_path, image_scale
     )
     image_dataloader = ImageViewDataLoader(
-        camera_params, image_batch, n_epochs=n_epochs, shuffle=True
+        camera_params, image_batch, n_iter=gs_config.training_iter, shuffle=True
     )
 
     points_3d = reconstruction_data["points_3d"]

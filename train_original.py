@@ -27,7 +27,6 @@ def main() -> None:  # noqa: PLR0915
         default=(Path(__file__).parent / "output").resolve(),
         help="output directory",
     )
-    parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     parser.add_argument(
         "-c",
         "--config_filepath",
@@ -41,7 +40,9 @@ def main() -> None:  # noqa: PLR0915
 
     gs_config = GsConfig.from_json_file(args.config_filepath)
     raw_params, image_dataloader = build_params(
-        args.colmap_data_path, gs_config, args.image_scale, args.n_epochs
+        args.colmap_data_path,
+        args.image_scale,
+        gs_config,
     )
     print_info(raw_params)
 

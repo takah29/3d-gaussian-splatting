@@ -93,7 +93,7 @@ class ImageViewDataLoader:
         self,
         camera_params: dict[str, npt.NDArray],
         image_batch: npt.NDArray,
-        n_epochs: int = 1,
+        n_iter: int,
         seed: int = 42,
         *,
         shuffle: bool = True,
@@ -112,11 +112,13 @@ class ImageViewDataLoader:
         ]
         self.data = list(zip(view_list, image_batch, strict=True))
         self.shuffle = shuffle
-        self.n_epochs = n_epochs
+        self.n_iter = n_iter
+        self.n_epochs = np.ceil(self.n_iter / len(self.data)).astype(np.uint32)
         self.seed = seed
         self.rng = np.random.RandomState(seed)
 
     def __iter__(self) -> Iterator[tuple[dict[str, npt.NDArray], npt.NDArray]]:
+        count = 0
         for epoch in range(self.n_epochs):
             # エポックごとに新しいシードを設定
             epoch_rng = np.random.RandomState(self.seed + epoch)
@@ -126,7 +128,10 @@ class ImageViewDataLoader:
                 epoch_rng.shuffle(indices)
 
             for idx in indices:
+                if count >= self.n_iter:
+                    break
                 yield self.data[idx]
+                count += 1
 
     def __len__(self) -> int:
         return len(self.data) * self.n_epochs

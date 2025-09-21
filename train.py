@@ -39,7 +39,6 @@ def main() -> None:  # noqa: PLR0915
         default=(Path(__file__).parent / "output").resolve(),
         help="output directory",
     )
-    parser.add_argument("-e", "--n_epochs", type=int, default=1, help="number of epochs")
     parser.add_argument(
         "-c",
         "--config_filepath",
@@ -52,9 +51,7 @@ def main() -> None:  # noqa: PLR0915
     args = parser.parse_args()
 
     gs_config = GsConfig.from_json_file(args.config_filepath)
-    raw_params, image_dataloader = build_params(
-        args.colmap_data_path, gs_config, args.image_scale, args.n_epochs
-    )
+    raw_params, image_dataloader = build_params(args.colmap_data_path, args.image_scale, gs_config)
     print_info(raw_params)
 
     gs_config.derive_additional_property(
@@ -173,7 +170,7 @@ def main() -> None:  # noqa: PLR0915
 
             # 貢献度の低いガウシアンの除去
             if (
-                dencification_count % consts["dencification_counts_for_contribution_pruning"] == 0
+                dencification_count % consts["contribution_pruning_densification_cycle"] == 0
                 and i <= consts["densify_until_iter"]
             ):
                 print("===== Contribution Pruning ======")
