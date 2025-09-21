@@ -178,7 +178,9 @@ def main() -> None:  # noqa: PLR0915
             ):
                 print("===== Contribution Pruning ======")
                 raw_params, pruned_num = prune_gaussians_by_contribution_scores(
-                    raw_params, contribution_scores_acc, consts
+                    raw_params,
+                    contribution_scores_acc,  # type: ignore[arg-type]
+                    consts,
                 )
 
                 print(f"pruned_num: {pruned_num}")
@@ -200,8 +202,8 @@ def main() -> None:  # noqa: PLR0915
 
             # タイルあたりのガウシアン数を更新
             gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
-            update = make_updater(consts, optimizer, jit=True)
-            render = make_render(consts, active_sh_degree=3, jit=True)
+            update = make_imporved_updater(gs_config.to_dict(), optimizer, jit=True)
+            render = make_render(gs_config.to_dict(), active_sh_degree=3, jit=True)
 
         # SH degreeとdrop rateを増やす
         if i in (1000, 2000, 3000):

@@ -7,10 +7,7 @@ import numpy as np
 import optax  # type: ignore[import-untyped]
 
 from gs.config import GsConfig
-from gs.core.density_control import (
-    densify_gaussians,
-    prune_gaussians,
-)
+from gs.core.density_control import densify_gaussians, prune_gaussians
 from gs.function_factory import make_render, make_updater
 from gs.helper import build_params, get_optimizer, print_info
 from gs.utils import DataLogger, get_corrected_params, save_params, to_numpy_dict
@@ -78,7 +75,6 @@ def main() -> None:  # noqa: PLR0915
 
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
     view_space_grads_norm_counts = np.zeros(raw_params["means3d"].shape[0], dtype=np.int32)
-    contribution_scores_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
 
     active_sh_degree = 0
     losses = []
@@ -139,9 +135,7 @@ def main() -> None:  # noqa: PLR0915
                 )
 
             # alpha値が低いガウシアンの除去
-            raw_params, contribution_scores_acc, pruned_num = prune_gaussians(
-                raw_params, contribution_scores_acc, consts
-            )
+            raw_params, _, pruned_num = prune_gaussians(raw_params, None, consts)
 
             print(
                 f"cloned_num: {cloned_num}, splitted_num: {splitted_num}, pruned_num: {pruned_num}"
@@ -162,8 +156,8 @@ def main() -> None:  # noqa: PLR0915
 
             # タイルあたりのガウシアン数を更新
             gs_config.set_tile_max_gs_num(raw_params["means3d"].shape[0])
-            update = make_updater(consts, optimizer, jit=True)
-            render = make_render(consts, active_sh_degree=3, jit=True)
+            update = make_updater(gs_config.to_dict(), optimizer, jit=True)
+            render = make_render(gs_config.to_dict(), active_sh_degree=3, jit=True)
 
         # SH degreeとdrop rateを増やす
         if i in (1000, 2000, 3000):
