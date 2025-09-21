@@ -84,7 +84,7 @@ def main() -> None:  # noqa: PLR0915
     drop_rate = 0.0
     key = jax.random.PRNGKey(1234)
     dencification_count = 0
-
+    losses = []
     for i, (view, target) in enumerate(image_dataloader, start=1):
         key, subkey = jax.random.split(key)
         raw_params, opt_state, loss, contribution_scores, viewspace_grads = update(
@@ -96,7 +96,12 @@ def main() -> None:  # noqa: PLR0915
             drop_rate,
             subkey,
         )
-        print(f"Iter {i}: loss={loss}")
+
+        losses.append(loss)
+
+        if i == 1 or i % 10 == 0:
+            print(f"Iter {i}: mean_loss={np.mean(losses):.4f}")
+            losses.clear()
 
         # 途中経過のパラメータを保存
         if i % args.checkpoint_cycle == 0:
