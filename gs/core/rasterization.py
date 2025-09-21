@@ -104,14 +104,13 @@ def rasterize(
         batch_size=(tile_upperleft_coord_batch.shape[0] + tile_chanks - 1) // tile_chanks,
     )
 
-    # ガウシアンの貢献度スコアを計算
+    # ガウシアン除去のための貢献度スコア計算
     flat_gaussian_indices = tile_depth_decending_indices_batch.reshape(-1)
     contribution_scores = (
         jnp.zeros(gaussians["means_2d"].shape[0])
         .at[flat_gaussian_indices]
         .add(tile_contribution_batch.reshape(-1))
     )
-    # counts = jnp.zeros(gaussians["means_2d"].shape[0], jnp.int32).at[flat_gaussian_indices].add(1)
 
     # タイルごとのバッファを結合
     transposed = jnp.transpose(image_buffer_batch, (0, 2, 1, 3, 4))

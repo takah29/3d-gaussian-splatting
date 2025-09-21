@@ -145,7 +145,7 @@ def split_gaussians_by_long_axis(
 ) -> tuple[dict[str, npt.NDArray], npt.NDArray, int]:
     """Long-Axis=splitによるガウシアンの分割
 
-    ref: https://arxiv.org/pdf/2508.12313
+    Reference: https://xiaobin2001.github.io/improved-gs-web/
     """
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_gaussians"] - raw_params["means3d"].shape[0]
@@ -226,6 +226,10 @@ def prune_gaussians_by_contribution_scores(
     contribution_scores_acc: npt.NDArray,
     consts: dict[str, Any],
 ) -> tuple[dict[str, npt.NDArray], npt.NDArray]:
+    """貢献度スコアによるガウシアンの除去
+
+    Refference: https://efficientgaussian.github.io/
+    """
     non_zero_score_median = np.median(contribution_scores_acc[contribution_scores_acc > 0.0])
     pruning_mask = (
         contribution_scores_acc < consts["contribution_pruning_coeff"] * non_zero_score_median

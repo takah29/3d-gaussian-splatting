@@ -55,12 +55,14 @@ def make_updater(
         projected_gaussians = project(
             corrected_params, **view, consts=consts, active_sh_degree=active_sh_degree
         )
+
+        # ガウシアンのドロップアウト
+        # Reference: https://github.com/DCVL-3D/DropGaussian_release
         n_gaussians = projected_gaussians["means_2d"].shape[0]
         drop_indices = jax.random.choice(
             key, n_gaussians, shape=(int(n_gaussians * drop_rate),), replace=False
         )
         drop_mask = jnp.isin(jnp.arange(n_gaussians), drop_indices)
-
         projected_gaussians["opacities"] = jnp.where(
             drop_mask[:, None], 0.0, projected_gaussians["opacities"] / (1.0 - drop_rate)
         )
