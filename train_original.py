@@ -1,3 +1,5 @@
+"""3D Gaussian Splatting - Original Implementation"""
+
 import argparse
 from pathlib import Path
 

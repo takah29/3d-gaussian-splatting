@@ -1,3 +1,12 @@
+"""3D Gaussian Splatting - Improved Implementation
+
+Enhanced implementation with optimization techniques.
+- Efficient densification via long-axis splitting
+- Contribution tracking and contribution-based pruning
+- Dropout for improved generalization
+- Snugbox tile intersection detection
+"""
+
 import argparse
 from pathlib import Path
 
