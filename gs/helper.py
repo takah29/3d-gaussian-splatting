@@ -28,10 +28,11 @@ def _init_gaussian_property(points_3d: npt.NDArray) -> dict[str, npt.NDArray]:
 
 
 def print_info(raw_params: dict[str, npt.NDArray]) -> None:
-    print(f"{' raw_params ':=^40}")
+    max_len = max(len(key) for key in raw_params)
+    print(f"{' raw_params ':=^30}")
     for k, v in raw_params.items():
-        print(f"{k}: {v.shape}")
-    print(f"{'=' * 40}")
+        print(f"{k:<{max_len}}: {v.shape!s}")
+    print(f"{'=' * 30}")
 
 
 def build_params(

@@ -67,15 +67,14 @@ class GsConfig:
 
     def display(self) -> None:
         """設定パラメータを表示する。"""
-        print(f"{' Configuration ':=^40}")
         max_len = max(len(field.name) for field in self.__dataclass_fields__.values())
-
+        print(f"{' Configuration ':=^60}")
         for field_info in self.__dataclass_fields__.values():
             name = field_info.name
             value = getattr(self, name)
 
             print(f"{name:<{max_len}} : {value!s}")
-        print(f"{'=' * 40}")
+        print(f"{'=' * 60}")
 
     def to_dict(self) -> dict[str, Any]:
         """設定を辞書形式で取得する。
