@@ -11,8 +11,17 @@ from gs.core.projection import compute_cov_vmap
 
 
 def prune_gaussians(
-    raw_params: dict[str, npt.NDArray], contribution_scores_acc: npt.NDArray, consts: dict[str, Any]
-) -> tuple[dict[str, npt.NDArray], npt.NDArray, int]:
+    raw_params: dict[str, npt.NDArray],
+    contribution_scores_acc: npt.NDArray
+    | None,  # for prune_gaussians_by_contribution_scores function
+    consts: dict[str, Any],
+) -> tuple[dict[str, npt.NDArray], npt.NDArray | None, int]:
+    """Removing Gaussians based on opacity
+
+    Note:
+        If contribution_scores_acc is provided, it also removes the corresponding
+        Gaussians and their contribution scores.
+    """
     pruning_indices = (expit(raw_params["opacities"]) < consts["eps_prune_alpha"]).ravel()
 
     # 空などを表現する巨大なガウシアンが必要ない場合に有効
@@ -22,23 +31,34 @@ def prune_gaussians(
         pruning_indices = pruning_indices | scale_prune_indices
 
     pruned_params = {key: val[~pruning_indices] for key, val in raw_params.items()}
-    pruned_contribution_scores = contribution_scores_acc[~pruning_indices]
-    return pruned_params, pruned_contribution_scores, pruning_indices.sum()
+    pruned_contribution_scores_acc = (
+        contribution_scores_acc[~pruning_indices] if contribution_scores_acc is not None else None
+    )
+    return pruned_params, pruned_contribution_scores_acc, pruning_indices.sum()
 
 
 def densify_gaussians(
     raw_params: dict[str, npt.NDArray],
-    contribution_scores_acc: npt.NDArray,
+    contribution_scores_acc: npt.NDArray
+    | None,  # for prune_gaussians_by_contribution_scores function
     view_space_grads_mean_norm: npt.NDArray,
     consts: dict[str, Any],
-) -> tuple[dict[str, npt.NDArray], npt.NDArray, int, int]:
+) -> tuple[dict[str, npt.NDArray], npt.NDArray | None, int, int]:
+    """Densification of Gaussians using Image Position Gradients
+
+    Note:
+        If contribution_scores_acc is provided, duplicates the Gaussians to be densified
+        along with their corresponding contribution scores.
+    """
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_gaussians"] - raw_params["means3d"].shape[0]
 
     while True:
         target_indices = view_space_grads_mean_norm > tau_pos
         target_params = {key: val[target_indices] for key, val in raw_params.items()}
-        target_contribution_scores = contribution_scores_acc[target_indices]
+        target_contribution_scores_acc = (
+            contribution_scores_acc[target_indices] if contribution_scores_acc is not None else None
+        )
 
         max_scales = np.exp(target_params["scales"].max(axis=1))
         clone_indices = max_scales < consts["scale_threshold"] * consts["extent"]
@@ -50,16 +70,16 @@ def densify_gaussians(
             break
         tau_pos *= 2.0
 
-    clone_params, clone_contribution_scores, cloned_num = _clone_gaussians(
-        target_params, target_contribution_scores, clone_indices
+    clone_params, clone_contribution_scores_acc, cloned_num = _clone_gaussians(
+        target_params, target_contribution_scores_acc, clone_indices
     )
     covs_3d = compute_cov_vmap(
         target_params["quats"] / np.linalg.norm(target_params["quats"], axis=-1, keepdims=True),
         np.exp(target_params["scales"]),  # type: ignore[arg-type]
     )
-    split_params, split_contribution_scores, splited_num = _split_gaussians(
+    split_params, split_contribution_scores_acc, splited_num = _split_gaussians(
         target_params,
-        target_contribution_scores,
+        target_contribution_scores_acc,
         covs_3d,  # type: ignore[arg-type]
         split_indices,
         consts,
@@ -69,12 +89,18 @@ def densify_gaussians(
         key: np.vstack((raw_params[key][~target_indices], clone_params[key], split_params[key]))
         for key in raw_params
     }
-    contribution_scores_acc = np.hstack(
-        (
-            contribution_scores_acc[~target_indices],
-            clone_contribution_scores,
-            split_contribution_scores,
+    contribution_scores_acc = (
+        np.hstack(
+            (
+                contribution_scores_acc[~target_indices],
+                clone_contribution_scores_acc,
+                split_contribution_scores_acc,
+            )
         )
+        if contribution_scores_acc is not None
+        and clone_contribution_scores_acc is not None
+        and split_contribution_scores_acc is not None
+        else None
     )
 
     return raw_params, contribution_scores_acc, cloned_num, splited_num
@@ -82,27 +108,51 @@ def densify_gaussians(
 
 def _clone_gaussians(
     raw_params: dict[str, npt.NDArray],
-    contribution_scores_acc: npt.NDArray,
+    contribution_scores_acc: npt.NDArray
+    | None,  # for prune_gaussians_by_contribution_scores function
     clone_indices: npt.NDArray,
-) -> tuple[dict[str, npt.NDArray], npt.NDArray, int]:
+) -> tuple[dict[str, npt.NDArray], npt.NDArray | None, int]:
+    """Clones Gaussians.
+
+    Note:
+        If contribution_scores_acc is provided, it duplicates both the Gaussians to be cloned
+        and their corresponding contribution scores.
+    """
     clone_params = {key: val[clone_indices] for key, val in raw_params.items()}
-    clone_contribution_scores = contribution_scores_acc[clone_indices]
+    clone_contribution_scores_acc = (
+        contribution_scores_acc[clone_indices] if contribution_scores_acc is not None else None
+    )
 
     # 以降で異なる勾配更新が起こり自然と分離するため同じパラメータのガウシアンを複製
     merged_params = {key: np.vstack((val, val)) for key, val in clone_params.items()}
-    merged_contribution_scores = np.hstack((clone_contribution_scores, clone_contribution_scores))
-    return merged_params, merged_contribution_scores, clone_indices.sum()
+
+    merged_contribution_scores_acc = (
+        np.hstack((clone_contribution_scores_acc, clone_contribution_scores_acc))
+        if clone_contribution_scores_acc is not None
+        else None
+    )
+    return merged_params, merged_contribution_scores_acc, clone_indices.sum()
 
 
 def _split_gaussians(
     raw_params: dict[str, npt.NDArray],
-    contribution_scores_acc: npt.NDArray,
+    contribution_scores_acc: npt.NDArray
+    | None,  # for prune_gaussians_by_contribution_scores function
     covs_3d: npt.NDArray,
     split_indices: npt.NDArray,
     consts: dict[str, Any],
-) -> tuple[dict[str, npt.NDArray], npt.NDArray, int]:
+) -> tuple[dict[str, npt.NDArray], npt.NDArray | None, int]:
+    """Split Gaussians
+
+    Note:
+        If contribution_scores_acc is provided, duplicates the Gaussians to be split
+        along with their corresponding contribution scores.
+    """
     split_params = {key: val[split_indices] for key, val in raw_params.items()}
-    split_contribution_scores = contribution_scores_acc[split_indices]
+
+    split_contribution_scores_acc = (
+        contribution_scores_acc[split_indices] if contribution_scores_acc is not None else None
+    )
     split_num = consts["split_num"]
     key = jax.random.PRNGKey(0)
     split_means_3d_sampled = _batch_sample_from_covariance(
@@ -129,23 +179,35 @@ def _split_gaussians(
     for key in raw_params:
         values = [param_dict[key] for param_dict in split_params_tuple]  # type: ignore[index]
         merged_params[key] = np.vstack(values)
-    merged_contribution_scores = np.hstack([split_contribution_scores] * split_num)
+
+    merged_contribution_scores_acc = (
+        np.hstack([split_contribution_scores_acc] * split_num)
+        if split_contribution_scores_acc is not None
+        else None
+    )
+
     return (
         merged_params,
-        merged_contribution_scores,
+        merged_contribution_scores_acc,
         int(split_indices.sum() * (split_num - 1)),
     )  # type: ignore[return-value]
 
 
 def split_gaussians_by_long_axis(
     raw_params: dict[str, npt.NDArray],
-    contribution_scores_acc: npt.NDArray,
+    contribution_scores_acc: npt.NDArray
+    | None,  # for prune_gaussians_by_contribution_scores function
     view_space_grads_mean_norm: npt.NDArray,
     consts: dict[str, Any],
-) -> tuple[dict[str, npt.NDArray], npt.NDArray, int]:
-    """Long-Axis=splitによるガウシアンの分割
+) -> tuple[dict[str, npt.NDArray], npt.NDArray | None, int]:
+    """Splitting Gaussians using Long-Axis-split
 
-    Reference: https://xiaobin2001.github.io/improved-gs-web/
+    Note:
+        If contribution_scores_acc is provided, duplicates the contribution scores
+        corresponding to the Gaussians to be split.
+
+    Reference:
+        https://xiaobin2001.github.io/improved-gs-web/
     """
     tau_pos = consts["tau_pos"]
     max_densification_num = consts["max_gaussians"] - raw_params["means3d"].shape[0]
@@ -161,7 +223,9 @@ def split_gaussians_by_long_axis(
         tau_pos *= 2.0
 
     target_params = {key: val[target_indices] for key, val in raw_params.items()}
-    target_contribution_scores = contribution_scores_acc[target_indices]
+    target_contribution_scores_acc = (
+        contribution_scores_acc[target_indices] if contribution_scores_acc is not None else None
+    )
 
     max_scale_indices = np.argmax(target_params["scales"], axis=1)
 
@@ -199,13 +263,18 @@ def split_gaussians_by_long_axis(
         )
         for key in raw_params
     }
-    contribution_scores_acc = np.hstack(
-        (
-            contribution_scores_acc[~target_indices],
-            target_contribution_scores,
-            target_contribution_scores,
+    contribution_scores_acc = (
+        np.hstack(
+            (
+                contribution_scores_acc[~target_indices],
+                target_contribution_scores_acc,
+                target_contribution_scores_acc,
+            )
         )
+        if contribution_scores_acc is not None and target_contribution_scores_acc is not None
+        else None
     )
+
     return raw_params, contribution_scores_acc, split_num
 
 
@@ -226,9 +295,10 @@ def prune_gaussians_by_contribution_scores(
     contribution_scores_acc: npt.NDArray,
     consts: dict[str, Any],
 ) -> tuple[dict[str, npt.NDArray], npt.NDArray]:
-    """貢献度スコアによるガウシアンの除去
+    """Remove Gaussians by Contribution Score
 
-    Refference: https://efficientgaussian.github.io/
+    Reference:
+        https://efficientgaussian.github.io/
     """
     non_zero_score_median = np.median(contribution_scores_acc[contribution_scores_acc > 0.0])
     pruning_mask = (
