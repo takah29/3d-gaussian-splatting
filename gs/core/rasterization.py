@@ -83,6 +83,43 @@ def rasterize(
     tile_depth_decending_indices_batch: jax.Array,
     tile_upperleft_coord_batch: jax.Array,
     consts: dict[str, Any],
+) -> jax.Array:
+    """projectで射影した2Dガウシアンをラスタライズする.
+
+    Note:
+      * 画像配列の次元は[H(y軸), W(x軸), C]で実装を統一する
+      * 数値計算の座標は(x, y)で行っていることに注意
+    """
+    img_shape = consts["img_shape"]
+    background = consts["background"]
+    tile_size = consts["tile_size"]
+    tile_chanks = consts["tile_chanks"]
+
+    image_buffer_batch, _ = jax.lax.map(
+        lambda args: rasterize_tile_data_vmap(args[0], args[1], gaussians, background, tile_size),
+        (
+            tile_depth_decending_indices_batch,
+            tile_upperleft_coord_batch,
+        ),
+        batch_size=(tile_upperleft_coord_batch.shape[0] + tile_chanks - 1) // tile_chanks,
+    )
+
+    # タイルごとのバッファを結合
+    transposed = jnp.transpose(image_buffer_batch, (0, 2, 1, 3, 4))
+    final_buffer = transposed.reshape(
+        transposed.shape[0] * transposed.shape[1],
+        transposed.shape[2] * transposed.shape[3],
+        transposed.shape[4],
+    )[: img_shape[0], : img_shape[1]]
+
+    return final_buffer
+
+
+def rasterize_and_compute_contributions(
+    gaussians: dict[str, jax.Array],
+    tile_depth_decending_indices_batch: jax.Array,
+    tile_upperleft_coord_batch: jax.Array,
+    consts: dict[str, Any],
 ) -> tuple[jax.Array, jax.Array]:
     """projectで射影した2Dガウシアンをラスタライズする.
 
