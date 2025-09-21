@@ -20,7 +20,7 @@ from gs.core.density_control import (
     prune_gaussians_by_contribution_scores,
     split_gaussians_by_long_axis,
 )
-from gs.function_factory import make_render, make_updater
+from gs.function_factory import make_imporved_updater, make_render
 from gs.helper import build_params, get_optimizer, print_info
 from gs.utils import DataLogger, get_corrected_params, save_params, to_numpy_dict
 
@@ -82,7 +82,7 @@ def main() -> None:  # noqa: PLR0915
 
     logger = DataLogger(save_dir / "progress")
 
-    update = make_updater(consts, optimizer, jit=True)
+    update = make_imporved_updater(consts, optimizer, jit=True)
     render = make_render(consts, active_sh_degree=3, jit=True)
 
     view_space_grads_norm_acc = np.zeros(raw_params["means3d"].shape[0], dtype=np.float32)
