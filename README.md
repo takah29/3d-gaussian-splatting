@@ -39,34 +39,36 @@ The [T&T+DB COLMAP (650MB)](https://repo-sam.inria.fr/fungraph/3d-gaussian-splat
 Run the following command.
 
 ```bash
-uv run train.py <colmap_dataset_path> -e <n_epochs>
+uv run train.py <colmap_dataset_path>
 ```
 
-For example, to use the train dataset from T&T+DB COLMAP (for datasets with around 300 images, setting epochs to 20-30 works well):
+For example, to use the train dataset from T&T+DB COLMAP.
 
 ```bash
-uv run train.py ./tandt_db/tandt/train -e 30
+uv run train.py ./tandt_db/tandt/train
 ```
 
 On a GeForce RTX 5070 Ti, this takes approximately 30 minutes.
 
 By default, the trained parameter files are saved as `./output/params_final` in the repository root. Additionally, optimization parameters and progress images are saved every 500 iterations.
 
+train.py includes several improvement methods. Please refer to the comments at the beginning of the file for details. train_original.py is the original implementation.
+
 ### Memory Optimization
 
 If you encounter Out of Memory errors, reduce memory consumption by adjusting the following:
 
 - **Adjust tile chunk processing**
-  - Modify `tile_chanks` in `./config/default.json` (default: 1)
-  - Divides memory-intensive batch processing into smaller chunks. Start with 2 and adjust to an appropriate value
+  - Modify `tile_chanks` in `./config/default.json`
+  - Divides memory-intensive batch processing into smaller chunks
   - Smaller values result in faster execution due to sequential processing of divided chunks
 
 - **Reduce image resolution** (recommended: ~1000x600 pixels)
   ```bash
-  uv run train.py <colmap_dataset_path> -e <n_epochs> --image_scale 0.7
+  uv run train.py <colmap_dataset_path> --image_scale 0.7
   ```
 - **Lower maximum number of Gaussians**
-  - Modify `max_gaussians` in `./config/default.json` (default: 200,000)
+  - Modify `max_gaussians` in `./config/default.json`
 
 To reduce runtime memory usage (with slower execution), set these environment variables:
 
@@ -114,9 +116,9 @@ uv run viewer_jax.py -f ./output/params_final
 
 This implementation differs from the original due to JAX JIT compilation requiring static arrays. As a result:
 
-- There's a maximum limit on Gaussians that can be registered per tile
-- Color blending processing is limited to a fixed number of iterations
-- When Gaussians are densely packed in certain tiles, some may not be rendered due to the iteration limit, potentially causing artifacts
+There's a maximum limit on Gaussians that can be registered per tile
+Color blending processing is limited to a fixed maximum number of Gaussians
+When Gaussians are densely packed in certain tiles, some may not be rendered due to the Gaussian count limit, potentially causing artifacts
 
 During training, Gaussians that are not rendered in a particular iteration won't have their parameters updated. However, this is typically compensated by updates from other viewpoint iterations.
 
