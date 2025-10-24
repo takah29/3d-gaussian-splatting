@@ -187,7 +187,7 @@ def make_render(
             projected_gaussians, consts
         )
 
-        image_buffer, _ = rasterize(
+        image_buffer = rasterize(
             projected_gaussians,
             tile_depth_decending_indices_batch,
             tile_upperleft_coord_batch,
