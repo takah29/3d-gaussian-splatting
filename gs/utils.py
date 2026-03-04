@@ -16,7 +16,7 @@ from gs.config import GsConfig
 
 def load_colmap_data(
     colmap_data_path: Path, image_scale: float, *, quatanion: bool = False
-) -> tuple[dict[str, npt.NDArray], dict[str, npt.NDArray], npt.NDArray]:
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], np.ndarray]:
     reconstruction = pycolmap.Reconstruction(str(colmap_data_path / "sparse" / "0"))
     points_3d = np.vstack([pt.xyz for pt in reconstruction.points3D.values()], dtype=np.float32)
     colors = (
@@ -26,14 +26,37 @@ def load_colmap_data(
     intrinsic_list = []
     image_list = []
     image_filenames = []
+
     for img in reconstruction.images.values():
-        image_arr = _load_image_and_fit(colmap_data_path / "images" / img.name, image_scale)
-        height, width = image_arr.shape[:2]
-        width_scale = width / img.camera.width
-        height_scale = height / img.camera.height
-        intrinsic_vec = img.camera.params * np.array(
-            [width_scale, height_scale, width_scale, height_scale]
-        )
+        image_path = colmap_data_path / "images" / img.name
+        cam = img.camera
+
+        bitmap = pycolmap.Bitmap.read(str(image_path), as_rgb=True)
+        temp_arr = bitmap.to_array()
+        h, w = temp_arr.shape[:2]
+
+        if w != cam.width:
+            cam.rescale(w, h)
+
+        if cam.model != pycolmap.CameraModelId.PINHOLE:
+            bitmap, cam = pycolmap.undistort_image(pycolmap.UndistortCameraOptions(), bitmap, cam)
+            image_arr = bitmap.to_array()
+        else:
+            image_arr = temp_arr
+
+        if image_scale != 1.0:
+            cur_h, cur_w = image_arr.shape[:2]
+            target_w = int(cur_w * image_scale)
+            target_h = int(cur_h * image_scale)
+
+            pil_img = Image.fromarray(image_arr)
+            pil_img = pil_img.resize((target_w, target_h), resample=Image.Resampling.LANCZOS)
+            image_arr = np.array(pil_img)
+
+            cam.rescale(image_scale)
+
+        image_arr = image_arr.astype(np.float32) / 255.0
+        intrinsic_vec = cam.params.astype(np.float32)
 
         intrinsic_list.append(intrinsic_vec)
         image_list.append(image_arr)
